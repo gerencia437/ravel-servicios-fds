@@ -6,6 +6,7 @@
   <meta name="theme-color" content="#1e40af" />
   <title>Ravel · Servicios Fin de Semana</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
     .hidden { display: none !important; }
@@ -105,6 +106,7 @@
       vehiculos: [], planillas: [], usuarios: [],
       filtroEstado: 'por_aprobar',
       dashDesde: '', dashHasta: '',
+      repPlaca: '__ALL__', repDesde: '', repHasta: '',
       unsubPlanillas: null, unsubVehiculos: null, unsubUsuarios: null
     };
 
@@ -148,8 +150,9 @@
     };
     const badgeInterv = (e) => { const x = ESTADOS_INTERV[e || 'pendiente']; return `<span class="badge ${x.cls}">${x.txt}</span>`; };
 
-    const esOficina = () => estado.usuario && ['coordinador','gerencia'].includes(estado.usuario.rol);
-    const esGerencia = () => estado.usuario && estado.usuario.rol === 'gerencia';
+    const esOficina = () => estado.usuario && ['coordinador','administrador'].includes(estado.usuario.rol);
+    const esConductor = () => estado.usuario && estado.usuario.rol === 'conductor';
+    const esAdministrador = () => estado.usuario && estado.usuario.rol === 'administrador';
 
     const guardarSesion = (u) => sessionStorage.setItem('ravel_fds_user', JSON.stringify(u));
     const cargarSesion = () => { const s = sessionStorage.getItem('ravel_fds_user'); return s ? JSON.parse(s) : null; };
@@ -196,13 +199,19 @@
     };
 
     const renderNav = () => {
-      const tabs = [{ id: 'lista', txt: 'Planillas' }, { id: 'nueva', txt: '+ Nueva planilla' }];
-      if (esOficina()) {
+      const tabs = [];
+      if (esConductor()) {
+        tabs.push({ id: 'lista', txt: 'Mis planillas' });
+        tabs.push({ id: 'nueva', txt: '+ Nueva planilla' });
+      } else {
+        tabs.push({ id: 'lista', txt: 'Planillas' });
+        tabs.push({ id: 'nueva', txt: '+ Nueva planilla' });
         tabs.push({ id: 'aprobaciones', txt: 'Aprobaciones' });
         tabs.push({ id: 'dashboard', txt: 'Dashboard' });
+        tabs.push({ id: 'reportes', txt: 'Reportes' });
         tabs.push({ id: 'vehiculos', txt: 'Vehículos' });
       }
-      if (esGerencia()) tabs.push({ id: 'usuarios', txt: 'Usuarios' });
+      if (esAdministrador()) tabs.push({ id: 'usuarios', txt: 'Usuarios' });
       $('nav-tabs').innerHTML = tabs.map(t =>
         `<button class="nav-link ${estado.vista === t.id ? 'active' : ''}" data-tab="${t.id}">${esc(t.txt)}</button>`
       ).join('');
@@ -215,6 +224,11 @@
     };
 
     const navegarA = (vista) => {
+      // Guardia: conductor solo puede acceder a lista y planilla
+      const vistasRestringidas = ['aprobaciones','dashboard','reportes','vehiculos','usuarios'];
+      if (esConductor() && vistasRestringidas.includes(vista)) {
+        vista = 'lista';
+      }
       estado.vista = vista;
       if (vista !== 'planilla') estado.planillaEditando = null;
       renderNav();
@@ -257,6 +271,7 @@
         case 'planilla': c.innerHTML = renderPlanilla(); afterRenderPlanilla(); break;
         case 'aprobaciones': c.innerHTML = renderAprobaciones(); afterRenderAprobaciones(); break;
         case 'dashboard': c.innerHTML = renderDashboard(); afterRenderDashboard(); break;
+        case 'reportes': c.innerHTML = renderReportes(); afterRenderReportes(); break;
         case 'vehiculos': c.innerHTML = renderVehiculos(); afterRenderVehiculos(); break;
         case 'usuarios': c.innerHTML = renderUsuarios(); afterRenderUsuarios(); break;
       }
@@ -324,11 +339,10 @@
 
     // ===== Lista =====
     const renderLista = () => {
-      const lista = estado.usuario.rol === 'conductor'
+      const lista = esConductor()
         ? estado.planillas.filter(p =>
             p.creadoPorCedula === estado.usuario.cedula ||
-            (p.intervenciones || []).some(i => i.cedulaConductor === estado.usuario.cedula) ||
-            p.estado === 'en_curso'
+            (p.intervenciones || []).some(i => i.cedulaConductor === estado.usuario.cedula)
           )
         : estado.planillas;
       let html = `
@@ -761,6 +775,230 @@
       $('dash-hasta').onchange = (e) => { estado.dashHasta = e.target.value; render(); };
     };
 
+    // ===== Reportes =====
+    const renderReportes = () => {
+      if (!estado.repDesde) estado.repDesde = fechaHaceDias(30);
+      if (!estado.repHasta) estado.repHasta = fechaHoy();
+
+      // Construir lista de placas disponibles (de planillas + vehiculos)
+      const placasSet = new Set();
+      estado.vehiculos.forEach(v => v.activo !== false && placasSet.add(v.placa));
+      estado.planillas.forEach(p => placasSet.add(p.placa));
+      const placas = Array.from(placasSet).sort();
+
+      // Filtrar planillas según criterios
+      const filt = estado.planillas.filter(p => {
+        if (p.fecha < estado.repDesde || p.fecha > estado.repHasta) return false;
+        if (estado.repPlaca !== '__ALL__' && p.placa !== estado.repPlaca) return false;
+        return true;
+      }).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.placa.localeCompare(b.placa));
+
+      // Calcular totales
+      let totIv = 0, minJor = 0, minIv = 0;
+      filt.forEach(p => {
+        const iv = p.intervenciones || [];
+        totIv += iv.length;
+        iv.forEach(i => { minIv += diffMin(i.horaLlegada, i.horaSalida) || 0; });
+        if (p.horaInicioOperacion && p.horaFinOperacion) minJor += diffMin(p.horaInicioOperacion, p.horaFinOperacion) || 0;
+      });
+
+      const previewRows = filt.slice(0, 20).map(p => {
+        const iv = (p.intervenciones || []).length;
+        const jorMin = (p.horaInicioOperacion && p.horaFinOperacion) ? diffMin(p.horaInicioOperacion, p.horaFinOperacion) : null;
+        return `
+          <tr class="border-b">
+            <td class="py-2 px-2 text-sm">${esc(p.fecha)}</td>
+            <td class="py-2 px-2 text-sm">${esc(p.diaSemana || '')}</td>
+            <td class="py-2 px-2 text-sm font-medium">${esc(p.placa)}</td>
+            <td class="py-2 px-2 text-sm">${esc(p.horaInicioOperacion || '--')}</td>
+            <td class="py-2 px-2 text-sm">${esc(p.horaFinOperacion || '--')}</td>
+            <td class="py-2 px-2 text-sm text-center">${iv}</td>
+            <td class="py-2 px-2 text-sm">${fmtMin(jorMin)}</td>
+            <td class="py-2 px-2 text-sm">${badgeEstado(p.estado)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <h1 class="text-lg font-semibold mb-3">Reportes</h1>
+        <div class="card mb-3">
+          <div class="grid md:grid-cols-3 gap-3">
+            <div>
+              <label class="label">Placa</label>
+              <select id="rep-placa" class="input">
+                <option value="__ALL__" ${estado.repPlaca === '__ALL__' ? 'selected' : ''}>— Todas las placas —</option>
+                ${placas.map(pl => `<option value="${esc(pl)}" ${estado.repPlaca === pl ? 'selected' : ''}>${esc(pl)}</option>`).join('')}
+              </select>
+            </div>
+            <div><label class="label">Desde</label><input id="rep-desde" type="date" class="input" value="${estado.repDesde}" /></div>
+            <div><label class="label">Hasta</label><input id="rep-hasta" type="date" class="input" value="${estado.repHasta}" /></div>
+          </div>
+          <div class="grid grid-cols-3 gap-3 mt-4 pt-4 border-t">
+            <div class="text-center"><div class="text-xs text-gray-500 uppercase">Planillas</div><div class="text-2xl font-semibold">${filt.length}</div></div>
+            <div class="text-center"><div class="text-xs text-gray-500 uppercase">Intervenciones</div><div class="text-2xl font-semibold">${totIv}</div></div>
+            <div class="text-center"><div class="text-xs text-gray-500 uppercase">Horas jornada</div><div class="text-2xl font-semibold">${fmtMin(minJor)}</div></div>
+          </div>
+          <button id="btn-descargar-rep" class="btn btn-primary w-full mt-4" ${filt.length === 0 ? 'disabled' : ''}>
+            ${filt.length === 0 ? 'No hay planillas en el rango' : `📥 Descargar Excel (${filt.length} planillas)`}
+          </button>
+        </div>
+
+        ${filt.length > 0 ? `
+          <div class="card">
+            <div class="font-semibold mb-3">Previsualización ${filt.length > 20 ? `(primeras 20 de ${filt.length})` : ''}</div>
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="text-left py-2 px-2">Fecha</th>
+                    <th class="text-left py-2 px-2">Día</th>
+                    <th class="text-left py-2 px-2">Placa</th>
+                    <th class="text-left py-2 px-2">Inicio</th>
+                    <th class="text-left py-2 px-2">Fin</th>
+                    <th class="text-center py-2 px-2"># Interv.</th>
+                    <th class="text-left py-2 px-2">Jornada</th>
+                    <th class="text-left py-2 px-2">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>${previewRows}</tbody>
+              </table>
+            </div>
+          </div>
+        ` : ''}
+      `;
+    };
+
+    const afterRenderReportes = () => {
+      $('rep-placa').onchange = (e) => { estado.repPlaca = e.target.value; render(); };
+      $('rep-desde').onchange = (e) => { estado.repDesde = e.target.value; render(); };
+      $('rep-hasta').onchange = (e) => { estado.repHasta = e.target.value; render(); };
+      const btn = $('btn-descargar-rep');
+      if (btn) btn.onclick = descargarReporteExcel;
+    };
+
+    const descargarReporteExcel = () => {
+      const filt = estado.planillas.filter(p => {
+        if (p.fecha < estado.repDesde || p.fecha > estado.repHasta) return false;
+        if (estado.repPlaca !== '__ALL__' && p.placa !== estado.repPlaca) return false;
+        return true;
+      }).sort((a,b) => a.fecha.localeCompare(b.fecha) || a.placa.localeCompare(b.placa));
+
+      if (filt.length === 0) { alert('No hay planillas en el rango seleccionado'); return; }
+
+      const placaLabel = estado.repPlaca === '__ALL__' ? 'TODAS' : estado.repPlaca;
+      const ahora = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
+
+      // Construir AOA (array of arrays) para una sola hoja con bloques verticales
+      const aoa = [];
+      aoa.push(['REPORTE DE SERVICIOS - TRANSPORTE RAVEL']);
+      aoa.push([`Placa: ${placaLabel}`]);
+      aoa.push([`Período: ${estado.repDesde} a ${estado.repHasta}`]);
+      aoa.push([`Generado: ${ahora}`]);
+      aoa.push([`Generado por: ${estado.usuario.nombre}`]);
+      aoa.push([]);
+
+      // Totales globales
+      let totPlanillas = filt.length;
+      let totIv = 0, totMinJor = 0, totMinIv = 0;
+      const porCond = {}, porUbi = {}, porLugar = {};
+
+      filt.forEach(p => {
+        const iv = p.intervenciones || [];
+        const jorMin = (p.horaInicioOperacion && p.horaFinOperacion) ? diffMin(p.horaInicioOperacion, p.horaFinOperacion) : null;
+
+        // Encabezado de planilla
+        aoa.push([`PLANILLA ${p.placa} · ${p.diaSemana || ''} ${p.fecha}`]);
+        aoa.push([
+          `Inicio: ${p.horaInicioOperacion || '--'}`,
+          `Fin: ${p.horaFinOperacion || '--'}`,
+          `Jornada: ${fmtMin(jorMin)}`,
+          `Estado: ${(ESTADOS[p.estado] || {txt: p.estado}).txt}`
+        ]);
+
+        if (p.comentarioAprobacion) aoa.push([`Comentario aprobación: ${p.comentarioAprobacion}`]);
+
+        // Encabezado tabla intervenciones
+        aoa.push(['#', 'Conductor', 'Llegada', 'Salida', 'Duración', 'Ubicación', 'Lugar atendido', 'Observaciones', 'Estado interv.', 'Motivo rechazo']);
+
+        if (iv.length === 0) {
+          aoa.push(['', '— Sin intervenciones —']);
+        } else {
+          iv.forEach((i, idx) => {
+            const dur = diffMin(i.horaLlegada, i.horaSalida);
+            aoa.push([
+              idx + 1,
+              i.nombreConductor || '',
+              i.horaLlegada || '',
+              i.horaSalida || '',
+              fmtMin(dur),
+              i.ubicacion || '',
+              i.lugarAtendido || '',
+              i.observaciones || '',
+              (ESTADOS_INTERV[i.estado || 'pendiente'] || {txt:''}).txt,
+              i.comentarioRechazo || ''
+            ]);
+            totMinIv += dur || 0;
+            if (i.nombreConductor) porCond[i.nombreConductor] = (porCond[i.nombreConductor] || 0) + 1;
+            if (i.ubicacion) porUbi[i.ubicacion] = (porUbi[i.ubicacion] || 0) + 1;
+            if (i.lugarAtendido) porLugar[i.lugarAtendido] = (porLugar[i.lugarAtendido] || 0) + 1;
+          });
+          aoa.push(['', `Total intervenciones: ${iv.length}`]);
+        }
+
+        totIv += iv.length;
+        if (jorMin) totMinJor += jorMin;
+        aoa.push([]);
+      });
+
+      // Resumen final
+      aoa.push(['═══ RESUMEN DEL PERÍODO ═══']);
+      aoa.push(['Total planillas', totPlanillas]);
+      aoa.push(['Total intervenciones', totIv]);
+      aoa.push(['Tiempo total jornada', fmtMin(totMinJor)]);
+      aoa.push(['Tiempo total intervención', fmtMin(totMinIv)]);
+      aoa.push(['Promedio intervenc./planilla', totPlanillas ? (totIv / totPlanillas).toFixed(1) : '0']);
+      aoa.push([]);
+
+      // Top conductores
+      const top = (obj) => Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,10);
+      const topC = top(porCond), topU = top(porUbi), topL = top(porLugar);
+      if (topC.length) {
+        aoa.push(['Top conductores', 'Intervenciones']);
+        topC.forEach(([k,v]) => aoa.push([k, v]));
+        aoa.push([]);
+      }
+      if (topU.length) {
+        aoa.push(['Top ubicaciones', 'Intervenciones']);
+        topU.forEach(([k,v]) => aoa.push([k, v]));
+        aoa.push([]);
+      }
+      if (topL.length) {
+        aoa.push(['Top lugares atendidos', 'Intervenciones']);
+        topL.forEach(([k,v]) => aoa.push([k, v]));
+      }
+
+      // Generar Excel
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [
+        { wch: 6 },   // #
+        { wch: 26 },  // Conductor
+        { wch: 10 },  // Llegada
+        { wch: 10 },  // Salida
+        { wch: 12 },  // Duración
+        { wch: 22 },  // Ubicación
+        { wch: 28 },  // Lugar atendido
+        { wch: 30 },  // Observaciones
+        { wch: 14 },  // Estado
+        { wch: 25 }   // Motivo rechazo
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Reporte');
+
+      const nombreArchivo = `Reporte_Ravel_${placaLabel}_${estado.repDesde}_a_${estado.repHasta}.xlsx`;
+      XLSX.writeFile(wb, nombreArchivo);
+    };
+
     // ===== Vehículos =====
     let _vehEditando = null;
     const renderVehiculos = () => {
@@ -841,7 +1079,7 @@
     let _userEditando = null;
     const renderUsuarios = () => {
       const u = _userEditando || { cedula: '', nombre: '', telefono: '', rol: 'conductor', activo: true };
-      const ROLES = ['conductor','coordinador','gerencia'];
+      const ROLES = ['conductor','coordinador','administrador'];
       return `
         <h1 class="text-lg font-semibold mb-3">Usuarios</h1>
         <div class="card mb-3">
