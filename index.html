@@ -1029,16 +1029,33 @@
       aoa.push([`GENERADO POR: ${estado.usuario.nombre}`]);
       aoa.push([]);
       // Cabecera de columnas
-      aoa.push(['FECHA', 'INICIO JORNADA', 'FIN JORNADA', 'CONDUCTOR', 'LLEGA', 'SALIDA', 'UBICACIÓN', 'LUGAR ATENDIDO']);
+      aoa.push(['FECHA', 'INICIO JORNADA', 'FIN JORNADA', 'CONDUCTOR', 'LLEGA', 'SALIDA', 'UBICACIÓN', 'LUGAR ATENDIDO', 'RESULTADO', 'MOTIVO FALLO', 'ESTADO PLANILLA', 'MOTIVO CANCELACIÓN']);
 
       // Una fila por cada intervención
       filt.forEach(p => {
         const iv = p.intervenciones || [];
-        if (iv.length === 0) {
-          // Planilla sin intervenciones: una fila vacía para que aparezca
-          aoa.push([p.fecha, p.horaInicioOperacion || '', p.horaFinOperacion || '', '', '', '', '', '']);
+        const esCancelada = p.estado === 'cancelado';
+        const estadoLabel = ESTADOS[p.estado] ? ESTADOS[p.estado].txt : p.estado;
+
+        if (esCancelada) {
+          // Planilla cancelada: una sola fila con el motivo
+          aoa.push([
+            p.fecha,
+            p.horaInicioOperacion || '',
+            p.horaFinOperacion || '',
+            '', '', '', '', '',
+            '', '',
+            'CANCELADO',
+            p.motivoCancelacion || ''
+          ]);
+        } else if (iv.length === 0) {
+          // Planilla sin intervenciones
+          aoa.push([p.fecha, p.horaInicioOperacion || '', p.horaFinOperacion || '', '', '', '', '', '', '', '', estadoLabel, '']);
         } else {
           iv.forEach(i => {
+            const resultado = i.resultadoConductor === 'efectivo' ? 'EFECTIVO'
+                            : i.resultadoConductor === 'fallido'  ? 'FALLIDO'
+                            : '';
             aoa.push([
               p.fecha,
               p.horaInicioOperacion || '',
@@ -1047,7 +1064,11 @@
               i.horaLlegada || '',
               i.horaSalida || '',
               i.ubicacion || '',
-              i.lugarAtendido || ''
+              i.lugarAtendido || '',
+              resultado,
+              i.motivoFallo || '',
+              estadoLabel,
+              ''
             ]);
           });
         }
@@ -1062,7 +1083,11 @@
         { wch: 10 },  // LLEGA
         { wch: 10 },  // SALIDA
         { wch: 22 },  // UBICACIÓN
-        { wch: 30 }   // LUGAR ATENDIDO
+        { wch: 28 },  // LUGAR ATENDIDO
+        { wch: 12 },  // RESULTADO
+        { wch: 35 },  // MOTIVO FALLO
+        { wch: 16 },  // ESTADO PLANILLA
+        { wch: 35 }   // MOTIVO CANCELACIÓN
       ];
 
       const wb = XLSX.utils.book_new();
