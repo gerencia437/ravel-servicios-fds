@@ -302,9 +302,17 @@
             <label class="label">Vehículo</label>
             <select id="np-placa" class="input">
               <option value="">— Seleccionar —</option>
-              ${estado.vehiculos.filter(v => v.activo !== false).map(v =>
-                `<option value="${esc(v.placa)}">${esc(v.placa)} — ${esc(v.tipo || '')} ${v.origen ? `(${esc(v.origen)})` : ''}</option>`
-              ).join('')}
+              ${(() => {
+                const vehiculosDisp = estado.vehiculos.filter(v => v.activo !== false);
+                if (esConductor() && estado.usuario.placaAsignada) {
+                  // Conductor: solo su placa asignada
+                  const v = vehiculosDisp.find(v => v.placa === estado.usuario.placaAsignada);
+                  return v ? `<option value="${esc(v.placa)}" selected>${esc(v.placa)} — ${esc(v.tipo || '')}</option>` : '<option disabled>Sin placa asignada</option>';
+                }
+                return vehiculosDisp.map(v =>
+                  `<option value="${esc(v.placa)}">${esc(v.placa)} — ${esc(v.tipo || '')} ${v.origen ? `(${esc(v.origen)})` : ''}</option>`
+                ).join('');
+              })()}
             </select>
           </div>
           <div>
@@ -1017,45 +1025,38 @@
       if (filt.length === 0) { alert('No hay planillas en el rango seleccionado'); return; }
 
       const placaLabel = estado.repPlaca === '__ALL__' ? 'TODAS' : estado.repPlaca;
+      const esTodas = estado.repPlaca === '__ALL__';
+
+      // Ordenar: si es todas → primero por placa, luego por fecha; si es una → solo por fecha
+      filt.sort((a,b) => esTodas
+        ? a.placa.localeCompare(b.placa) || a.fecha.localeCompare(b.fecha)
+        : a.fecha.localeCompare(b.fecha)
+      );
 
       const aoa = [];
-      // Encabezado
+      // Encabezado general
       aoa.push(['REPORTE SERVICIOS TRANSPORTES RAVEL']);
       aoa.push([`PERIODO: ${estado.repDesde} a ${estado.repHasta}`]);
       aoa.push([`PLACA: ${placaLabel}`]);
-      // Clientes únicos del período filtrado
       const clientesUnicos = [...new Set(filt.map(p => p.clienteNombre).filter(Boolean))];
       aoa.push([`CLIENTE: ${clientesUnicos.length > 0 ? clientesUnicos.join(', ') : '—'}`]);
       aoa.push([`GENERADO POR: ${estado.usuario.nombre}`]);
       aoa.push([]);
-      // Cabecera de columnas
-      aoa.push(['FECHA', 'INICIO JORNADA', 'FIN JORNADA', 'CONDUCTOR', 'LLEGA', 'SALIDA', 'UBICACIÓN', 'LUGAR ATENDIDO', 'RESULTADO', 'MOTIVO FALLO', 'ESTADO PLANILLA', 'MOTIVO CANCELACIÓN']);
 
-      // Una fila por cada intervención
-      filt.forEach(p => {
+      const CABECERA = ['FECHA', 'INICIO JORNADA', 'FIN JORNADA', 'CONDUCTOR', 'LLEGA', 'SALIDA', 'UBICACIÓN', 'LUGAR ATENDIDO', 'RESULTADO', 'MOTIVO FALLO', 'ESTADO PLANILLA', 'MOTIVO CANCELACIÓN'];
+
+      const escribirFilasPlanilla = (p) => {
         const iv = p.intervenciones || [];
         const esCancelada = p.estado === 'cancelado';
         const estadoLabel = ESTADOS[p.estado] ? ESTADOS[p.estado].txt : p.estado;
-
         if (esCancelada) {
-          // Planilla cancelada: una sola fila con el motivo
-          aoa.push([
-            p.fecha,
-            p.horaInicioOperacion || '',
-            p.horaFinOperacion || '',
-            '', '', '', '', '',
-            '', '',
-            'CANCELADO',
-            p.motivoCancelacion || ''
-          ]);
+          aoa.push([p.fecha, p.horaInicioOperacion || '', p.horaFinOperacion || '', '', '', '', '', '', '', '', 'CANCELADO', p.motivoCancelacion || '']);
         } else if (iv.length === 0) {
-          // Planilla sin intervenciones
           aoa.push([p.fecha, p.horaInicioOperacion || '', p.horaFinOperacion || '', '', '', '', '', '', '', '', estadoLabel, '']);
         } else {
           iv.forEach(i => {
             const resultado = i.resultadoConductor === 'efectivo' ? 'EFECTIVO'
-                            : i.resultadoConductor === 'fallido'  ? 'FALLIDO'
-                            : '';
+                            : i.resultadoConductor === 'fallido'  ? 'FALLIDO' : '';
             aoa.push([
               p.fecha,
               p.horaInicioOperacion || '',
@@ -1072,7 +1073,26 @@
             ]);
           });
         }
-      });
+      };
+
+      if (esTodas) {
+        // Agrupar por placa con bloque separado para cada una
+        const porPlaca = {};
+        filt.forEach(p => {
+          if (!porPlaca[p.placa]) porPlaca[p.placa] = [];
+          porPlaca[p.placa].push(p);
+        });
+        Object.entries(porPlaca).sort(([a],[b]) => a.localeCompare(b)).forEach(([placa, planillas]) => {
+          aoa.push([`PLACA: ${placa}`]);
+          aoa.push(CABECERA);
+          planillas.forEach(p => escribirFilasPlanilla(p));
+          aoa.push([]); // línea en blanco entre placas
+        });
+      } else {
+        // Una sola placa: cabecera única y todas las filas
+        aoa.push(CABECERA);
+        filt.forEach(p => escribirFilasPlanilla(p));
+      }
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [
@@ -1175,8 +1195,9 @@
     // ===== Usuarios =====
     let _userEditando = null;
     const renderUsuarios = () => {
-      const u = _userEditando || { cedula: '', nombre: '', telefono: '', rol: 'conductor', activo: true };
+      const u = _userEditando || { cedula: '', nombre: '', telefono: '', rol: 'conductor', placaAsignada: '', activo: true };
       const ROLES = ['conductor','coordinador','administrador'];
+      const esCond = (u.rol || 'conductor') === 'conductor';
       return `
         <h1 class="text-lg font-semibold mb-3">Usuarios</h1>
         <div class="card mb-3">
@@ -1185,7 +1206,21 @@
             <div><label class="label">Cédula</label><input id="u-cedula" class="input" value="${esc(u.cedula || u.id || '')}" ${_userEditando ? 'disabled' : ''} inputmode="numeric" /></div>
             <div><label class="label">Nombre completo</label><input id="u-nombre" class="input" value="${esc(u.nombre)}" /></div>
             <div><label class="label">Teléfono</label><input id="u-tel" class="input" value="${esc(u.telefono || '')}" inputmode="tel" /></div>
-            <div><label class="label">Rol</label><select id="u-rol" class="input">${ROLES.map(r => `<option ${u.rol === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
+            <div>
+              <label class="label">Rol</label>
+              <select id="u-rol" class="input" onchange="document.getElementById('u-placa-wrap').style.display=this.value==='conductor'?'block':'none'">
+                ${ROLES.map(r => `<option ${u.rol === r ? 'selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </div>
+            <div id="u-placa-wrap" style="display:${esCond ? 'block' : 'none'}">
+              <label class="label">Placa asignada</label>
+              <select id="u-placa" class="input">
+                <option value="">— Sin placa asignada —</option>
+                ${estado.vehiculos.filter(v => v.activo !== false).map(v =>
+                  `<option value="${esc(v.placa)}" ${u.placaAsignada === v.placa ? 'selected' : ''}>${esc(v.placa)} — ${esc(v.tipo || '')}</option>`
+                ).join('')}
+              </select>
+            </div>
             <div class="flex items-center gap-2 md:col-span-2">
               <input id="u-activo" type="checkbox" ${u.activo !== false ? 'checked' : ''} />
               <label for="u-activo" class="text-sm">Activo</label>
@@ -1200,7 +1235,7 @@
           <div class="font-semibold mb-2">Usuarios (${estado.usuarios.length})</div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead><tr class="text-left border-b"><th class="py-2">Cédula</th><th>Nombre</th><th>Teléfono</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
+              <thead><tr class="text-left border-b"><th class="py-2">Cédula</th><th>Nombre</th><th>Teléfono</th><th>Rol</th><th>Placa</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 ${estado.usuarios.map(u => `
                   <tr class="border-b last:border-0">
@@ -1208,6 +1243,7 @@
                     <td>${esc(u.nombre)}</td>
                     <td class="text-gray-600">${esc(u.telefono || '—')}</td>
                     <td><span class="badge bg-blue-100 text-blue-700 capitalize">${esc(u.rol)}</span></td>
+                    <td class="font-medium">${u.placaAsignada ? `<span class="badge bg-slate-100 text-slate-700">${esc(u.placaAsignada)}</span>` : '<span class="text-gray-400 text-xs">—</span>'}</td>
                     <td><span class="badge ${u.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">${u.activo !== false ? 'Activo' : 'Inactivo'}</span></td>
                     <td class="text-right"><button class="text-blue-700 text-xs" data-user-edit="${esc(u.id)}">Editar</button></td>
                   </tr>
@@ -1233,7 +1269,9 @@
       const cedula = $('u-cedula').value.trim();
       const nombre = $('u-nombre').value.trim();
       if (!cedula || !nombre) return alert('Cédula y nombre obligatorios');
-      const payload = { cedula, nombre, telefono: $('u-tel').value.trim(), rol: $('u-rol').value, activo: $('u-activo').checked };
+      const rol = $('u-rol').value;
+      const placaAsignada = rol === 'conductor' ? ($('u-placa')?.value || '') : '';
+      const payload = { cedula, nombre, telefono: $('u-tel').value.trim(), rol, placaAsignada, activo: $('u-activo').checked };
       try {
         await setDoc(doc(db, 'usuarios_fds', cedula), payload);
         _userEditando = null;
