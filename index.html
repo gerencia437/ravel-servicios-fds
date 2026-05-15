@@ -103,11 +103,11 @@
     const estado = {
       usuario: null, vista: 'lista',
       planillaEditando: null,
-      vehiculos: [], planillas: [], usuarios: [],
+      vehiculos: [], planillas: [], usuarios: [], clientes: [],
       filtroEstado: 'por_aprobar',
       dashDesde: '', dashHasta: '',
       repPlaca: '__ALL__', repDesde: '', repHasta: '',
-      unsubPlanillas: null, unsubVehiculos: null, unsubUsuarios: null
+      unsubPlanillas: null, unsubVehiculos: null, unsubUsuarios: null, unsubClientes: null
     };
 
     const $ = (id) => document.getElementById(id);
@@ -178,6 +178,7 @@
       if (estado.unsubPlanillas) estado.unsubPlanillas();
       if (estado.unsubVehiculos) estado.unsubVehiculos();
       if (estado.unsubUsuarios) estado.unsubUsuarios();
+      if (estado.unsubClientes) estado.unsubClientes();
       limpiarSesion();
       estado.usuario = null; estado.vista = 'lista';
       $('view-main').classList.add('hidden');
@@ -195,6 +196,7 @@
       suscribirVehiculos();
       suscribirPlanillas();
       suscribirUsuarios();
+      suscribirClientes();
       navegarA(estado.vista);
     };
 
@@ -211,7 +213,10 @@
         tabs.push({ id: 'reportes', txt: 'Reportes' });
         tabs.push({ id: 'vehiculos', txt: 'Vehículos' });
       }
-      if (esAdministrador()) tabs.push({ id: 'usuarios', txt: 'Usuarios' });
+      if (esAdministrador()) {
+        tabs.push({ id: 'usuarios', txt: 'Usuarios' });
+        tabs.push({ id: 'clientes', txt: 'Clientes' });
+      }
       $('nav-tabs').innerHTML = tabs.map(t =>
         `<button class="nav-link ${estado.vista === t.id ? 'active' : ''}" data-tab="${t.id}">${esc(t.txt)}</button>`
       ).join('');
@@ -225,7 +230,7 @@
 
     const navegarA = (vista) => {
       // Guardia: conductor solo puede acceder a lista y planilla
-      const vistasRestringidas = ['aprobaciones','dashboard','reportes','vehiculos','usuarios'];
+      const vistasRestringidas = ['aprobaciones','dashboard','reportes','vehiculos','usuarios','clientes'];
       if (esConductor() && vistasRestringidas.includes(vista)) {
         vista = 'lista';
       }
@@ -264,6 +269,14 @@
       });
     };
 
+    const suscribirClientes = () => {
+      const q = query(collection(db, 'clientes_fds'), orderBy('nombre'));
+      estado.unsubClientes = onSnapshot(q, (snap) => {
+        estado.clientes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (estado.vista === 'clientes') render();
+      });
+    };
+
     const render = () => {
       const c = $('content');
       switch (estado.vista) {
@@ -274,6 +287,7 @@
         case 'reportes': c.innerHTML = renderReportes(); afterRenderReportes(); break;
         case 'vehiculos': c.innerHTML = renderVehiculos(); afterRenderVehiculos(); break;
         case 'usuarios': c.innerHTML = renderUsuarios(); afterRenderUsuarios(); break;
+        case 'clientes': c.innerHTML = renderClientes(); afterRenderClientes(); break;
       }
     };
 
@@ -289,6 +303,15 @@
               <option value="">— Seleccionar —</option>
               ${estado.vehiculos.filter(v => v.activo !== false).map(v =>
                 `<option value="${esc(v.placa)}">${esc(v.placa)} — ${esc(v.tipo || '')} ${v.origen ? `(${esc(v.origen)})` : ''}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="label">Cliente</label>
+            <select id="np-cliente" class="input">
+              <option value="">— Seleccionar cliente —</option>
+              ${estado.clientes.filter(c => c.activo !== false).map(c =>
+                `<option value="${esc(c.id)}" data-nombre="${esc(c.nombre)}">${esc(c.nombre)}</option>`
               ).join('')}
             </select>
           </div>
@@ -308,6 +331,11 @@
       const fecha = $('np-fecha').value;
       const placa = $('np-placa').value;
       const hi = $('np-hi').value;
+      const clienteSel = $('np-cliente');
+      const clienteId = clienteSel ? clienteSel.value : '';
+      const clienteNombre = clienteSel && clienteSel.selectedIndex > 0
+        ? clienteSel.options[clienteSel.selectedIndex].dataset.nombre || clienteSel.options[clienteSel.selectedIndex].text
+        : '';
       if (!fecha || !placa || !hi) return alert('Completa todos los campos');
       const idPlanilla = `${fecha}_${placa}`;
       const existing = await getDoc(doc(db, 'servicios_fds', idPlanilla));
@@ -320,6 +348,7 @@
       }
       const payload = {
         fecha, placa,
+        clienteId, clienteNombre,
         horaInicioOperacion: hi, horaFinOperacion: '',
         estado: 'en_curso',
         intervenciones: [],
@@ -363,6 +392,7 @@
                 <div class="font-medium">${esc(p.placa)} · ${esc(p.diaSemana || '')} ${esc(p.fecha)}</div>
                 ${badgeEstado(p.estado)}
               </div>
+              ${p.clienteNombre ? `<div class="text-xs text-blue-700 font-medium mb-1">📋 ${esc(p.clienteNombre)}</div>` : ''}
               <div class="text-sm text-gray-600">Inicio: ${esc(p.horaInicioOperacion || '--:--')}${p.horaFinOperacion ? ` · Fin: ${esc(p.horaFinOperacion)}` : ''}</div>
               <div class="text-xs text-gray-500 mt-1">${n} ${n === 1 ? 'intervención' : 'intervenciones'}</div>
             </div>
@@ -396,6 +426,7 @@
               <div>
                 <div class="text-xs text-gray-500 uppercase tracking-wide">Planilla</div>
                 <div class="font-semibold">${esc(p.placa)} · ${esc(p.diaSemana || '')} ${esc(p.fecha)}</div>
+                ${p.clienteNombre ? `<div class="text-sm text-blue-700 font-medium mt-0.5">📋 ${esc(p.clienteNombre)}</div>` : ''}
               </div>
               ${badgeEstado(p.estado)}
             </div>
@@ -877,6 +908,11 @@
     };
 
     const descargarReporteExcel = () => {
+      if (typeof XLSX === 'undefined') {
+        alert('La librería de Excel no está cargada. Revisa tu conexión y recarga la página.');
+        return;
+      }
+
       const filt = estado.planillas.filter(p => {
         if (p.fecha < estado.repDesde || p.fecha > estado.repHasta) return false;
         if (estado.repPlaca !== '__ALL__' && p.placa !== estado.repPlaca) return false;
@@ -886,115 +922,56 @@
       if (filt.length === 0) { alert('No hay planillas en el rango seleccionado'); return; }
 
       const placaLabel = estado.repPlaca === '__ALL__' ? 'TODAS' : estado.repPlaca;
-      const ahora = new Date().toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' });
 
-      // Construir AOA (array of arrays) para una sola hoja con bloques verticales
       const aoa = [];
-      aoa.push(['REPORTE DE SERVICIOS - TRANSPORTE RAVEL']);
-      aoa.push([`Placa: ${placaLabel}`]);
-      aoa.push([`Período: ${estado.repDesde} a ${estado.repHasta}`]);
-      aoa.push([`Generado: ${ahora}`]);
-      aoa.push([`Generado por: ${estado.usuario.nombre}`]);
+      // Encabezado
+      aoa.push(['REPORTE SERVICIOS TRANSPORTES RAVEL']);
+      aoa.push([`PERIODO: ${estado.repDesde} a ${estado.repHasta}`]);
+      aoa.push([`PLACA: ${placaLabel}`]);
+      // Clientes únicos del período filtrado
+      const clientesUnicos = [...new Set(filt.map(p => p.clienteNombre).filter(Boolean))];
+      aoa.push([`CLIENTE: ${clientesUnicos.length > 0 ? clientesUnicos.join(', ') : '—'}`]);
+      aoa.push([`GENERADO POR: ${estado.usuario.nombre}`]);
       aoa.push([]);
+      // Cabecera de columnas
+      aoa.push(['FECHA', 'INICIO JORNADA', 'FIN JORNADA', 'CONDUCTOR', 'LLEGA', 'SALIDA', 'UBICACIÓN', 'LUGAR ATENDIDO']);
 
-      // Totales globales
-      let totPlanillas = filt.length;
-      let totIv = 0, totMinJor = 0, totMinIv = 0;
-      const porCond = {}, porUbi = {}, porLugar = {};
-
+      // Una fila por cada intervención
       filt.forEach(p => {
         const iv = p.intervenciones || [];
-        const jorMin = (p.horaInicioOperacion && p.horaFinOperacion) ? diffMin(p.horaInicioOperacion, p.horaFinOperacion) : null;
-
-        // Encabezado de planilla
-        aoa.push([`PLANILLA ${p.placa} · ${p.diaSemana || ''} ${p.fecha}`]);
-        aoa.push([
-          `Inicio: ${p.horaInicioOperacion || '--'}`,
-          `Fin: ${p.horaFinOperacion || '--'}`,
-          `Jornada: ${fmtMin(jorMin)}`,
-          `Estado: ${(ESTADOS[p.estado] || {txt: p.estado}).txt}`
-        ]);
-
-        if (p.comentarioAprobacion) aoa.push([`Comentario aprobación: ${p.comentarioAprobacion}`]);
-
-        // Encabezado tabla intervenciones
-        aoa.push(['#', 'Conductor', 'Llegada', 'Salida', 'Duración', 'Ubicación', 'Lugar atendido', 'Observaciones', 'Estado interv.', 'Motivo rechazo']);
-
         if (iv.length === 0) {
-          aoa.push(['', '— Sin intervenciones —']);
+          // Planilla sin intervenciones: una fila vacía para que aparezca
+          aoa.push([p.fecha, p.horaInicioOperacion || '', p.horaFinOperacion || '', '', '', '', '', '']);
         } else {
-          iv.forEach((i, idx) => {
-            const dur = diffMin(i.horaLlegada, i.horaSalida);
+          iv.forEach(i => {
             aoa.push([
-              idx + 1,
+              p.fecha,
+              p.horaInicioOperacion || '',
+              p.horaFinOperacion || '',
               i.nombreConductor || '',
               i.horaLlegada || '',
               i.horaSalida || '',
-              fmtMin(dur),
               i.ubicacion || '',
-              i.lugarAtendido || '',
-              i.observaciones || '',
-              (ESTADOS_INTERV[i.estado || 'pendiente'] || {txt:''}).txt,
-              i.comentarioRechazo || ''
+              i.lugarAtendido || ''
             ]);
-            totMinIv += dur || 0;
-            if (i.nombreConductor) porCond[i.nombreConductor] = (porCond[i.nombreConductor] || 0) + 1;
-            if (i.ubicacion) porUbi[i.ubicacion] = (porUbi[i.ubicacion] || 0) + 1;
-            if (i.lugarAtendido) porLugar[i.lugarAtendido] = (porLugar[i.lugarAtendido] || 0) + 1;
           });
-          aoa.push(['', `Total intervenciones: ${iv.length}`]);
         }
-
-        totIv += iv.length;
-        if (jorMin) totMinJor += jorMin;
-        aoa.push([]);
       });
 
-      // Resumen final
-      aoa.push(['═══ RESUMEN DEL PERÍODO ═══']);
-      aoa.push(['Total planillas', totPlanillas]);
-      aoa.push(['Total intervenciones', totIv]);
-      aoa.push(['Tiempo total jornada', fmtMin(totMinJor)]);
-      aoa.push(['Tiempo total intervención', fmtMin(totMinIv)]);
-      aoa.push(['Promedio intervenc./planilla', totPlanillas ? (totIv / totPlanillas).toFixed(1) : '0']);
-      aoa.push([]);
-
-      // Top conductores
-      const top = (obj) => Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,10);
-      const topC = top(porCond), topU = top(porUbi), topL = top(porLugar);
-      if (topC.length) {
-        aoa.push(['Top conductores', 'Intervenciones']);
-        topC.forEach(([k,v]) => aoa.push([k, v]));
-        aoa.push([]);
-      }
-      if (topU.length) {
-        aoa.push(['Top ubicaciones', 'Intervenciones']);
-        topU.forEach(([k,v]) => aoa.push([k, v]));
-        aoa.push([]);
-      }
-      if (topL.length) {
-        aoa.push(['Top lugares atendidos', 'Intervenciones']);
-        topL.forEach(([k,v]) => aoa.push([k, v]));
-      }
-
-      // Generar Excel
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [
-        { wch: 6 },   // #
-        { wch: 26 },  // Conductor
-        { wch: 10 },  // Llegada
-        { wch: 10 },  // Salida
-        { wch: 12 },  // Duración
-        { wch: 22 },  // Ubicación
-        { wch: 28 },  // Lugar atendido
-        { wch: 30 },  // Observaciones
-        { wch: 14 },  // Estado
-        { wch: 25 }   // Motivo rechazo
+        { wch: 14 },  // FECHA
+        { wch: 16 },  // INICIO JORNADA
+        { wch: 14 },  // FIN JORNADA
+        { wch: 26 },  // CONDUCTOR
+        { wch: 10 },  // LLEGA
+        { wch: 10 },  // SALIDA
+        { wch: 22 },  // UBICACIÓN
+        { wch: 30 }   // LUGAR ATENDIDO
       ];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 'Reporte');
-
       const nombreArchivo = `Reporte_Ravel_${placaLabel}_${estado.repDesde}_a_${estado.repHasta}.xlsx`;
       XLSX.writeFile(wb, nombreArchivo);
     };
@@ -1140,6 +1117,95 @@
       try {
         await setDoc(doc(db, 'usuarios_fds', cedula), payload);
         _userEditando = null;
+        render();
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    // ===== Clientes (solo administrador) =====
+    let _clienteEditando = null;
+    const renderClientes = () => {
+      const c = _clienteEditando || { nombre: '', contacto: '', telefono: '', activo: true };
+      return `
+        <h1 class="text-lg font-semibold mb-3">Clientes</h1>
+        <div class="card mb-3">
+          <div class="font-semibold mb-3">${_clienteEditando ? 'Editar' : 'Agregar'} cliente</div>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div><label class="label">Nombre del cliente</label><input id="cl-nombre" class="input" value="${esc(c.nombre)}" placeholder="Ej: Colegio San Ignacio" /></div>
+            <div><label class="label">Persona de contacto</label><input id="cl-contacto" class="input" value="${esc(c.contacto || '')}" placeholder="Nombre del contacto" /></div>
+            <div><label class="label">Teléfono</label><input id="cl-tel" class="input" value="${esc(c.telefono || '')}" placeholder="3001234567" /></div>
+            <div class="flex items-center gap-2 mt-4">
+              <input id="cl-activo" type="checkbox" ${c.activo !== false ? 'checked' : ''} />
+              <label class="text-sm">Cliente activo</label>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            ${_clienteEditando ? `<button class="btn btn-ghost" data-action="cl-cancelar">Cancelar</button>` : ''}
+            <button class="btn btn-primary" data-action="cl-guardar">${_clienteEditando ? 'Actualizar' : 'Agregar cliente'}</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="font-semibold mb-3">Clientes registrados (${estado.clientes.length})</div>
+          ${estado.clientes.length === 0
+            ? '<div class="text-sm text-gray-500">Aún no hay clientes. Agrega el primero arriba.</div>'
+            : `<table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th class="text-left py-2 px-2">Nombre</th>
+                    <th class="text-left py-2 px-2">Contacto</th>
+                    <th class="text-left py-2 px-2">Teléfono</th>
+                    <th class="text-center py-2 px-2">Estado</th>
+                    <th class="py-2 px-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${estado.clientes.map(cl => `
+                    <tr class="border-t">
+                      <td class="py-2 px-2 font-medium">${esc(cl.nombre)}</td>
+                      <td class="py-2 px-2 text-gray-600">${esc(cl.contacto || '—')}</td>
+                      <td class="py-2 px-2 text-gray-600">${esc(cl.telefono || '—')}</td>
+                      <td class="py-2 px-2 text-center">
+                        <span class="badge ${cl.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}">
+                          ${cl.activo !== false ? 'Activo' : 'Inactivo'}
+                        </span>
+                      </td>
+                      <td class="py-2 px-2 text-right">
+                        <button class="text-blue-600 text-xs" data-cl-edit="${esc(cl.id)}">Editar</button>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>`
+          }
+        </div>
+      `;
+    };
+
+    const afterRenderClientes = () => {
+      document.querySelector('[data-action="cl-guardar"]').onclick = guardarCliente;
+      const cancelBtn = document.querySelector('[data-action="cl-cancelar"]');
+      if (cancelBtn) cancelBtn.onclick = () => { _clienteEditando = null; render(); };
+      document.querySelectorAll('[data-cl-edit]').forEach(b => b.onclick = () => {
+        _clienteEditando = estado.clientes.find(x => x.id === b.dataset.clEdit);
+        render();
+      });
+    };
+
+    const guardarCliente = async () => {
+      const nombre = $('cl-nombre').value.trim();
+      if (!nombre) return alert('El nombre del cliente es obligatorio');
+      const payload = {
+        nombre,
+        contacto: $('cl-contacto').value.trim(),
+        telefono: $('cl-tel').value.trim(),
+        activo: $('cl-activo').checked
+      };
+      try {
+        if (_clienteEditando) {
+          await updateDoc(doc(db, 'clientes_fds', _clienteEditando.id), payload);
+        } else {
+          await addDoc(collection(db, 'clientes_fds'), payload);
+        }
+        _clienteEditando = null;
         render();
       } catch (e) { alert('Error: ' + e.message); }
     };
