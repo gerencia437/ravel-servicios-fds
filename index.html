@@ -136,10 +136,11 @@
     const esc = (s) => s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     const ESTADOS = {
-      en_curso: { txt: 'En curso', cls: 'bg-blue-100 text-blue-700' },
+      en_curso:    { txt: 'En curso',    cls: 'bg-blue-100 text-blue-700' },
       por_aprobar: { txt: 'Por aprobar', cls: 'bg-amber-100 text-amber-700' },
-      aprobado: { txt: 'Aprobado', cls: 'bg-green-100 text-green-700' },
-      rechazado: { txt: 'Rechazado', cls: 'bg-red-100 text-red-700' }
+      aprobado:    { txt: 'Aprobado',    cls: 'bg-green-100 text-green-700' },
+      rechazado:   { txt: 'Rechazado',   cls: 'bg-red-100 text-red-700' },
+      cancelado:   { txt: 'Cancelado',   cls: 'bg-gray-200 text-gray-600' }
     };
     const badgeEstado = (e) => { const x = ESTADOS[e] || ESTADOS.en_curso; return `<span class="badge ${x.cls}">${x.txt}</span>`; };
 
@@ -462,31 +463,51 @@
             </div>
             ${intervs.length === 0 ? '<div class="text-center text-gray-500 py-4 text-sm">Sin intervenciones aún.</div>' : ''}
             <div class="space-y-2">
-              ${intervs.map((iv, idx) => `
-                <div class="border rounded-lg p-3 ${iv.estado === 'rechazada' ? 'bg-red-50 border-red-200' : iv.estado === 'ok' ? 'bg-green-50 border-green-200' : ''}">
-                  <div class="flex items-center justify-between mb-1">
-                    <div class="text-sm font-medium">#${idx + 1} · ${esc(iv.horaLlegada || '--')} → ${esc(iv.horaSalida || '--')} <span class="text-gray-500">(${fmtMin(diffMin(iv.horaLlegada, iv.horaSalida))})</span></div>
-                    ${badgeInterv(iv.estado)}
-                  </div>
-                  <div class="text-sm text-gray-700">📍 ${esc(iv.ubicacion || '—')} — ${esc(iv.lugarAtendido || '—')}</div>
-                  <div class="text-xs text-gray-500 mt-1">👤 ${esc(iv.nombreConductor || '—')}</div>
-                  ${iv.observaciones ? `<div class="text-xs text-gray-600 mt-1 italic">"${esc(iv.observaciones)}"</div>` : ''}
-                  ${iv.comentarioRechazo ? `<div class="text-xs text-red-700 mt-1">Rechazo: ${esc(iv.comentarioRechazo)}</div>` : ''}
-                  ${puedeEditar ? `
-                    <div class="flex gap-3 mt-2">
-                      <button class="text-blue-700 text-xs" data-edit-iv="${idx}">Editar</button>
-                      <button class="text-red-700 text-xs" data-del-iv="${idx}">Borrar</button>
+              ${intervs.map((iv, idx) => {
+                const esEfectivo = iv.resultadoConductor === 'efectivo';
+                const esFallido = iv.resultadoConductor === 'fallido';
+                const colorBorde = esEfectivo ? 'bg-green-50 border-green-300' : esFallido ? 'bg-red-50 border-red-300' : 'bg-white border-gray-200';
+                return `
+                  <div class="border rounded-lg p-3 ${colorBorde}">
+                    <div class="flex items-center justify-between mb-1">
+                      <div class="text-sm font-medium">#${idx + 1} · ${esc(iv.horaLlegada || '--')} → ${esc(iv.horaSalida || '--')} <span class="text-gray-500">(${fmtMin(diffMin(iv.horaLlegada, iv.horaSalida))})</span></div>
+                      <div class="flex items-center gap-1">
+                        ${esEfectivo ? '<span class="text-green-700 text-xs font-semibold">✔ Efectivo</span>' : ''}
+                        ${esFallido ? '<span class="text-red-700 text-xs font-semibold">✘ Fallido</span>' : ''}
+                        ${badgeInterv(iv.estado)}
+                      </div>
                     </div>
-                  ` : ''}
-                </div>
-              `).join('')}
+                    <div class="text-sm text-gray-700">📍 ${esc(iv.ubicacion || '—')} — ${esc(iv.lugarAtendido || '—')}</div>
+                    <div class="text-xs text-gray-500 mt-1">👤 ${esc(iv.nombreConductor || '—')}</div>
+                    ${iv.observaciones ? `<div class="text-xs text-gray-600 mt-1 italic">"${esc(iv.observaciones)}"</div>` : ''}
+                    ${esFallido && iv.motivoFallo ? `<div class="text-xs text-red-700 mt-1 font-medium">Motivo: ${esc(iv.motivoFallo)}</div>` : ''}
+                    ${iv.comentarioRechazo ? `<div class="text-xs text-red-700 mt-1">Rechazo oficina: ${esc(iv.comentarioRechazo)}</div>` : ''}
+                    ${puedeEditar ? `
+                      <div class="flex items-center gap-3 mt-2 flex-wrap">
+                        <button class="text-blue-700 text-xs font-medium" data-edit-iv="${idx}">✏️ Editar</button>
+                        <button class="text-red-600 text-xs font-medium" data-del-iv="${idx}">🗑 Borrar</button>
+                        ${!esEfectivo ? `<button class="text-green-700 text-xs font-semibold border border-green-400 rounded px-2 py-0.5" data-efectivo-iv="${idx}">✔ Efectivo</button>` : ''}
+                        ${!esFallido ? `<button class="text-red-700 text-xs font-semibold border border-red-400 rounded px-2 py-0.5" data-fallido-iv="${idx}">✘ Fallido</button>` : ''}
+                        ${(esEfectivo || esFallido) ? `<button class="text-gray-500 text-xs border border-gray-300 rounded px-2 py-0.5" data-limpiar-iv="${idx}">↩ Quitar</button>` : ''}
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+              }).join('')}
             </div>
           </div>
 
           <div class="grid grid-cols-2 gap-2">
             <button class="btn btn-ghost" data-action="volver">Volver</button>
-            ${puedeEditar ? `<button class="btn btn-ok" data-action="cerrar-dia">Cerrar día</button>` : ''}
+            ${puedeEditar ? `
+              <button class="btn btn-ok" data-action="cerrar-dia">Cerrar día</button>
+            ` : ''}
           </div>
+          ${puedeEditar ? `
+            <button class="btn w-full mt-1 bg-red-100 text-red-700 hover:bg-red-200 border border-red-300" data-action="cancelar-planilla">
+              Cancelar servicio del día
+            </button>
+          ` : ''}
         </div>
       `;
     };
@@ -498,10 +519,13 @@
       const addBtn = document.querySelector('[data-action="add-interv"]');
       if (addBtn) addBtn.onclick = () => abrirModalIntervencion(null, null);
 
+      // Editar intervención
       document.querySelectorAll('[data-edit-iv]').forEach(b => b.onclick = () => {
         const idx = parseInt(b.dataset.editIv);
         abrirModalIntervencion(p.intervenciones[idx], idx);
       });
+
+      // Borrar intervención
       document.querySelectorAll('[data-del-iv]').forEach(b => b.onclick = async () => {
         const idx = parseInt(b.dataset.delIv);
         if (!confirm('¿Borrar esta intervención?')) return;
@@ -509,6 +533,47 @@
         await updateDoc(doc(db, 'servicios_fds', p.id), { intervenciones: nuevas, updatedAt: serverTimestamp() });
       });
 
+      // Marcar Efectivo
+      document.querySelectorAll('[data-efectivo-iv]').forEach(b => b.onclick = async () => {
+        const idx = parseInt(b.dataset.efectivoIv);
+        const nuevas = [...(p.intervenciones || [])];
+        nuevas[idx] = { ...nuevas[idx], resultadoConductor: 'efectivo', motivoFallo: '' };
+        await updateDoc(doc(db, 'servicios_fds', p.id), { intervenciones: nuevas, updatedAt: serverTimestamp() });
+      });
+
+      // Marcar Fallido — abre modal para obligar motivo
+      document.querySelectorAll('[data-fallido-iv]').forEach(b => b.onclick = () => {
+        const idx = parseInt(b.dataset.fallidoIv);
+        abrirModal(`
+          <h2 class="text-lg font-semibold mb-3">Servicio fallido</h2>
+          <p class="text-sm text-gray-600 mb-3">Describe por qué no se pudo prestar el servicio.</p>
+          <label class="label">Motivo del fallo <span class="text-red-600">*</span></label>
+          <textarea id="motivo-fallo" rows="3" class="input" placeholder="Ej: El cliente no se presentó, vehículo no arrancó, dirección incorrecta..."></textarea>
+          <div class="grid grid-cols-2 gap-2 mt-4">
+            <button class="btn btn-ghost" id="btn-fallo-cancelar">Cancelar</button>
+            <button class="btn bg-red-600 text-white hover:bg-red-700" id="btn-fallo-guardar">Confirmar fallo</button>
+          </div>
+        `);
+        $('btn-fallo-cancelar').onclick = cerrarModal;
+        $('btn-fallo-guardar').onclick = async () => {
+          const motivo = $('motivo-fallo').value.trim();
+          if (!motivo) return alert('El motivo es obligatorio para marcar un servicio como fallido.');
+          const nuevas = [...(p.intervenciones || [])];
+          nuevas[idx] = { ...nuevas[idx], resultadoConductor: 'fallido', motivoFallo: motivo };
+          await updateDoc(doc(db, 'servicios_fds', p.id), { intervenciones: nuevas, updatedAt: serverTimestamp() });
+          cerrarModal();
+        };
+      });
+
+      // Quitar resultado (vuelve a sin marcar)
+      document.querySelectorAll('[data-limpiar-iv]').forEach(b => b.onclick = async () => {
+        const idx = parseInt(b.dataset.limpiarIv);
+        const nuevas = [...(p.intervenciones || [])];
+        nuevas[idx] = { ...nuevas[idx], resultadoConductor: '', motivoFallo: '' };
+        await updateDoc(doc(db, 'servicios_fds', p.id), { intervenciones: nuevas, updatedAt: serverTimestamp() });
+      });
+
+      // Horas
       const hi = $('pl-hi'), hf = $('pl-hf');
       if (hi) hi.onchange = async () => {
         await updateDoc(doc(db, 'servicios_fds', p.id), { horaInicioOperacion: hi.value, updatedAt: serverTimestamp() });
@@ -517,6 +582,7 @@
         await updateDoc(doc(db, 'servicios_fds', p.id), { horaFinOperacion: hf.value, updatedAt: serverTimestamp() });
       };
 
+      // Cerrar día
       const cerrarBtn = document.querySelector('[data-action="cerrar-dia"]');
       if (cerrarBtn) cerrarBtn.onclick = async () => {
         const horaFin = $('pl-hf')?.value || p.horaFinOperacion;
@@ -531,6 +597,35 @@
           updatedAt: serverTimestamp()
         });
         navegarA('lista');
+      };
+
+      // Cancelar servicio del día
+      const cancelarBtn = document.querySelector('[data-action="cancelar-planilla"]');
+      if (cancelarBtn) cancelarBtn.onclick = async () => {
+        if (!confirm('¿Cancelar el servicio del día? La planilla quedará marcada como cancelada.')) return;
+        abrirModal(`
+          <h2 class="text-lg font-semibold mb-3">Motivo de cancelación</h2>
+          <p class="text-sm text-gray-600 mb-3">¿Por qué se cancela el servicio del día?</p>
+          <label class="label">Motivo <span class="text-red-600">*</span></label>
+          <textarea id="motivo-cancelacion" rows="3" class="input" placeholder="Ej: Vehículo averiado, cliente canceló, fuerza mayor..."></textarea>
+          <div class="grid grid-cols-2 gap-2 mt-4">
+            <button class="btn btn-ghost" id="btn-mc-cancelar">Volver</button>
+            <button class="btn bg-red-600 text-white hover:bg-red-700" id="btn-mc-confirmar">Cancelar servicio</button>
+          </div>
+        `);
+        $('btn-mc-cancelar').onclick = cerrarModal;
+        $('btn-mc-confirmar').onclick = async () => {
+          const motivo = $('motivo-cancelacion').value.trim();
+          if (!motivo) return alert('Debes escribir el motivo de cancelación.');
+          await updateDoc(doc(db, 'servicios_fds', p.id), {
+            estado: 'cancelado',
+            motivoCancelacion: motivo,
+            canceladoPor: estado.usuario.nombre,
+            updatedAt: serverTimestamp()
+          });
+          cerrarModal();
+          navegarA('lista');
+        };
       };
     };
 
