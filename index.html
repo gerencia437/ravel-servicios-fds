@@ -11,9 +11,11 @@
     .hidden { display: none !important; }
     .input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; outline: none; }
     .input:focus { border-color: #1e40af; box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.2); }
+    .input:disabled { background: #f9fafb; color: #6b7280; }
     .label { display: block; font-size: 0.7rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
-    .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; transition: all 0.15s; cursor: pointer; border: none; }
+    .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; transition: all 0.15s; cursor: pointer; border: none; font-size: 0.875rem; }
     .btn:active { transform: scale(0.97); }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .btn-primary { background: #1e40af; color: white; }
     .btn-primary:hover { background: #1e3a8a; }
     .btn-ok { background: #15803d; color: white; }
@@ -24,14 +26,13 @@
     .btn-ghost:hover { background: #f9fafb; }
     .card { background: white; border-radius: 0.75rem; border: 1px solid #e5e7eb; padding: 1rem; }
     .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; }
-    .nav-link { padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; color: #4b5563; cursor: pointer; white-space: nowrap; }
+    .nav-link { padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; color: #4b5563; cursor: pointer; white-space: nowrap; background: transparent; border: none; }
     .nav-link:hover { background: #f3f4f6; }
     .nav-link.active { background: #1e40af; color: white; }
   </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
 
-  <!-- ============== VISTA: LOGIN ============== -->
   <div id="view-login" class="min-h-screen flex items-center justify-center p-4">
     <div class="card w-full max-w-sm">
       <div class="text-center mb-6">
@@ -46,13 +47,12 @@
         <div id="login-error" class="text-sm text-red-700 hidden"></div>
         <button id="btn-login" class="btn btn-primary w-full">Ingresar</button>
         <div class="text-xs text-gray-400 text-center pt-2">
-          Si es tu primera vez, contacta al administrador para que te dé acceso.
+          Si es tu primera vez, contacta al administrador.
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ============== VISTA: APP PRINCIPAL ============== -->
   <div id="view-main" class="hidden">
     <header class="bg-white border-b sticky top-0 z-10">
       <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
@@ -70,13 +70,11 @@
       </div>
       <nav id="nav-tabs" class="max-w-5xl mx-auto px-4 pb-2 flex gap-1 overflow-x-auto"></nav>
     </header>
-
     <main class="max-w-5xl mx-auto p-4">
       <div id="content"></div>
     </main>
   </div>
 
-  <!-- ============== MODAL GENÉRICO ============== -->
   <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
     <div class="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5">
       <div id="modal-content"></div>
@@ -90,11 +88,6 @@
       updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
 
-    // ============================================================
-    // CONFIGURACIÓN FIREBASE
-    // ⚠️ REEMPLAZA con la config del proyecto transporte-ravel
-    //    (puedes usar la misma de ravel-mantenimiento)
-    // ============================================================
     const firebaseConfig = {
       apiKey: "AIzaSyAmfFabMCKEDvZNdpIYA_HpIMAurpT_izg",
       authDomain: "transporte-ravel.firebaseapp.com",
@@ -103,226 +96,148 @@
       messagingSenderId: "349820780179",
       appId: "1:349820780179:web:e330d14a09d44f63019766"
     };
-
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
 
-    // ============================================================
-    // ESTADO GLOBAL
-    // ============================================================
     const estado = {
-      usuario: null,
-      vista: 'lista',
-      servicioEditando: null,
-      vehiculos: [],
-      servicios: [],
-      usuarios: [],
+      usuario: null, vista: 'lista',
+      planillaEditando: null,
+      vehiculos: [], planillas: [], usuarios: [],
       filtroEstado: 'por_aprobar',
-      dashDesde: '',
-      dashHasta: '',
-      unsubServicios: null,
-      unsubVehiculos: null,
-      unsubUsuarios: null
+      dashDesde: '', dashHasta: '',
+      unsubPlanillas: null, unsubVehiculos: null, unsubUsuarios: null
     };
 
-    // ============================================================
-    // HELPERS
-    // ============================================================
     const $ = (id) => document.getElementById(id);
-
-    const aMin = (h) => {
-      if (!h) return null;
-      const [hh, mm] = h.split(':').map(Number);
-      return hh * 60 + mm;
-    };
-
+    const uuid = () => 'i_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+    const aMin = (h) => { if (!h) return null; const [hh, mm] = h.split(':').map(Number); return hh * 60 + mm; };
     const diffMin = (ini, fin) => {
       const a = aMin(ini), b = aMin(fin);
       if (a == null || b == null) return null;
-      let d = b - a;
-      if (d < 0) d += 1440;
-      return d;
+      let d = b - a; if (d < 0) d += 1440; return d;
     };
-
     const fmtMin = (m) => {
       if (m == null) return '—';
-      const h = Math.floor(m / 60);
-      const mm = m % 60;
+      const h = Math.floor(m / 60), mm = m % 60;
       if (h === 0) return `${mm} min`;
       if (mm === 0) return `${h}h`;
       return `${h}h ${mm}min`;
     };
-
     const diaSemana = (iso) => {
       if (!iso) return '';
-      const d = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-      const [y, m, dd] = iso.split('-').map(Number);
-      return d[new Date(y, m - 1, dd).getDay()];
+      const d = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+      const [y,m,dd] = iso.split('-').map(Number);
+      return d[new Date(y, m-1, dd).getDay()];
     };
-
-    const fechaHoy = () => new Date().toISOString().slice(0, 10);
-
-    const fechaHaceDias = (n) => {
-      const d = new Date();
-      d.setDate(d.getDate() - n);
-      return d.toISOString().slice(0, 10);
-    };
-
-    const esc = (s) => {
-      if (s == null) return '';
-      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-    };
+    const fechaHoy = () => new Date().toISOString().slice(0,10);
+    const fechaHaceDias = (n) => { const d = new Date(); d.setDate(d.getDate()-n); return d.toISOString().slice(0,10); };
+    const esc = (s) => s == null ? '' : String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
     const ESTADOS = {
-      borrador: { txt: 'Borrador', cls: 'bg-gray-100 text-gray-700' },
-      en_ruta: { txt: 'En ruta', cls: 'bg-blue-100 text-blue-700' },
+      en_curso: { txt: 'En curso', cls: 'bg-blue-100 text-blue-700' },
       por_aprobar: { txt: 'Por aprobar', cls: 'bg-amber-100 text-amber-700' },
       aprobado: { txt: 'Aprobado', cls: 'bg-green-100 text-green-700' },
       rechazado: { txt: 'Rechazado', cls: 'bg-red-100 text-red-700' }
     };
+    const badgeEstado = (e) => { const x = ESTADOS[e] || ESTADOS.en_curso; return `<span class="badge ${x.cls}">${x.txt}</span>`; };
 
-    const badgeEstado = (e) => {
-      const x = ESTADOS[e] || ESTADOS.borrador;
-      return `<span class="badge ${x.cls}">${x.txt}</span>`;
+    const ESTADOS_INTERV = {
+      pendiente: { txt: 'Pendiente', cls: 'bg-gray-100 text-gray-700' },
+      ok: { txt: 'OK', cls: 'bg-green-100 text-green-700' },
+      rechazada: { txt: 'Rechazada', cls: 'bg-red-100 text-red-700' }
     };
+    const badgeInterv = (e) => { const x = ESTADOS_INTERV[e || 'pendiente']; return `<span class="badge ${x.cls}">${x.txt}</span>`; };
 
-    // ============================================================
-    // PERMISOS
-    // ============================================================
-    const esOficina = () => estado.usuario && ['coordinador', 'gerencia'].includes(estado.usuario.rol);
+    const esOficina = () => estado.usuario && ['coordinador','gerencia'].includes(estado.usuario.rol);
     const esGerencia = () => estado.usuario && estado.usuario.rol === 'gerencia';
 
-    // ============================================================
-    // SESIÓN
-    // ============================================================
     const guardarSesion = (u) => sessionStorage.setItem('ravel_fds_user', JSON.stringify(u));
-    const cargarSesion = () => {
-      const s = sessionStorage.getItem('ravel_fds_user');
-      return s ? JSON.parse(s) : null;
-    };
+    const cargarSesion = () => { const s = sessionStorage.getItem('ravel_fds_user'); return s ? JSON.parse(s) : null; };
     const limpiarSesion = () => sessionStorage.removeItem('ravel_fds_user');
 
-    // ============================================================
-    // LOGIN
-    // ============================================================
     const login = async () => {
       const cedula = $('input-cedula').value.trim();
       const errBox = $('login-error');
       errBox.classList.add('hidden');
-
-      if (!cedula) {
-        errBox.textContent = 'Ingresa tu cédula';
-        errBox.classList.remove('hidden');
-        return;
-      }
-
+      if (!cedula) { errBox.textContent = 'Ingresa tu cédula'; errBox.classList.remove('hidden'); return; }
       try {
         const snap = await getDoc(doc(db, 'usuarios_fds', cedula));
-        if (!snap.exists()) {
-          errBox.textContent = 'Cédula no registrada. Contacta al administrador.';
-          errBox.classList.remove('hidden');
-          return;
-        }
+        if (!snap.exists()) { errBox.textContent = 'Cédula no registrada.'; errBox.classList.remove('hidden'); return; }
         const u = snap.data();
-        if (u.activo === false) {
-          errBox.textContent = 'Tu usuario está inactivo. Contacta al administrador.';
-          errBox.classList.remove('hidden');
-          return;
-        }
+        if (u.activo === false) { errBox.textContent = 'Tu usuario está inactivo.'; errBox.classList.remove('hidden'); return; }
         estado.usuario = { cedula, ...u };
         guardarSesion(estado.usuario);
         entrarApp();
-      } catch (e) {
-        errBox.textContent = 'Error al ingresar: ' + e.message;
-        errBox.classList.remove('hidden');
-      }
+      } catch (e) { errBox.textContent = 'Error: ' + e.message; errBox.classList.remove('hidden'); }
     };
 
     const logout = () => {
-      if (estado.unsubServicios) estado.unsubServicios();
+      if (estado.unsubPlanillas) estado.unsubPlanillas();
       if (estado.unsubVehiculos) estado.unsubVehiculos();
       if (estado.unsubUsuarios) estado.unsubUsuarios();
       limpiarSesion();
-      estado.usuario = null;
-      estado.vista = 'lista';
+      estado.usuario = null; estado.vista = 'lista';
       $('view-main').classList.add('hidden');
       $('view-login').classList.remove('hidden');
       $('input-cedula').value = '';
     };
 
-    // ============================================================
-    // ENTRAR A LA APP
-    // ============================================================
     const entrarApp = () => {
       $('view-login').classList.add('hidden');
       $('view-main').classList.remove('hidden');
       $('header-nombre').textContent = estado.usuario.nombre;
       $('header-rol').textContent = estado.usuario.rol;
-
-      // Vista inicial según rol
-      estado.vista = estado.usuario.rol === 'conductor' ? 'lista' : 'lista';
-
+      estado.vista = 'lista';
       renderNav();
       suscribirVehiculos();
-      suscribirServicios();
-      if (esGerencia()) suscribirUsuarios();
+      suscribirPlanillas();
+      suscribirUsuarios();
       navegarA(estado.vista);
     };
 
-    // ============================================================
-    // NAVEGACIÓN
-    // ============================================================
     const renderNav = () => {
-      const tabs = [];
-      tabs.push({ id: 'lista', txt: estado.usuario.rol === 'conductor' ? 'Mis servicios' : 'Servicios' });
-      tabs.push({ id: 'form', txt: '+ Nuevo' });
+      const tabs = [{ id: 'lista', txt: 'Planillas' }, { id: 'nueva', txt: '+ Nueva planilla' }];
       if (esOficina()) {
         tabs.push({ id: 'aprobaciones', txt: 'Aprobaciones' });
         tabs.push({ id: 'dashboard', txt: 'Dashboard' });
         tabs.push({ id: 'vehiculos', txt: 'Vehículos' });
       }
-      if (esGerencia()) {
-        tabs.push({ id: 'usuarios', txt: 'Usuarios' });
-      }
+      if (esGerencia()) tabs.push({ id: 'usuarios', txt: 'Usuarios' });
       $('nav-tabs').innerHTML = tabs.map(t =>
-        `<button class="nav-link ${estado.vista === t.id ? 'active' : ''}" data-tab="${t.id}">${t.txt}</button>`
+        `<button class="nav-link ${estado.vista === t.id ? 'active' : ''}" data-tab="${t.id}">${esc(t.txt)}</button>`
       ).join('');
       $('nav-tabs').querySelectorAll('[data-tab]').forEach(b => {
-        b.onclick = () => navegarA(b.dataset.tab);
+        b.onclick = () => {
+          if (b.dataset.tab === 'nueva') iniciarNuevaPlanilla();
+          else navegarA(b.dataset.tab);
+        };
       });
     };
 
     const navegarA = (vista) => {
       estado.vista = vista;
-      if (vista !== 'form') estado.servicioEditando = null;
+      if (vista !== 'planilla') estado.planillaEditando = null;
       renderNav();
       render();
     };
 
-    // ============================================================
-    // SUSCRIPCIONES FIRESTORE
-    // ============================================================
     const suscribirVehiculos = () => {
       const q = query(collection(db, 'vehiculos_fds'), orderBy('placa'));
       estado.unsubVehiculos = onSnapshot(q, (snap) => {
         estado.vehiculos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (estado.vista === 'vehiculos' || estado.vista === 'form') render();
+        if (['vehiculos','planilla'].includes(estado.vista)) render();
       });
     };
 
-    const suscribirServicios = () => {
-      let q;
-      if (estado.usuario.rol === 'conductor') {
-        q = query(
-          collection(db, 'servicios_fds'),
-          where('cedulaConductor', '==', estado.usuario.cedula),
-          orderBy('fecha', 'desc')
-        );
-      } else {
-        q = query(collection(db, 'servicios_fds'), orderBy('fecha', 'desc'));
-      }
-      estado.unsubServicios = onSnapshot(q, (snap) => {
-        estado.servicios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const suscribirPlanillas = () => {
+      const q = query(collection(db, 'servicios_fds'), orderBy('fecha', 'desc'));
+      estado.unsubPlanillas = onSnapshot(q, (snap) => {
+        estado.planillas = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Si está editando una planilla, actualízala con la versión nueva
+        if (estado.planillaEditando) {
+          const upd = estado.planillas.find(p => p.id === estado.planillaEditando.id);
+          if (upd) estado.planillaEditando = upd;
+        }
         render();
       });
     };
@@ -331,18 +246,15 @@
       const q = query(collection(db, 'usuarios_fds'), orderBy('nombre'));
       estado.unsubUsuarios = onSnapshot(q, (snap) => {
         estado.usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        if (estado.vista === 'usuarios') render();
+        if (['usuarios','planilla'].includes(estado.vista)) render();
       });
     };
 
-    // ============================================================
-    // RENDER PRINCIPAL
-    // ============================================================
     const render = () => {
       const c = $('content');
       switch (estado.vista) {
         case 'lista': c.innerHTML = renderLista(); afterRenderLista(); break;
-        case 'form': c.innerHTML = renderForm(); afterRenderForm(); break;
+        case 'planilla': c.innerHTML = renderPlanilla(); afterRenderPlanilla(); break;
         case 'aprobaciones': c.innerHTML = renderAprobaciones(); afterRenderAprobaciones(); break;
         case 'dashboard': c.innerHTML = renderDashboard(); afterRenderDashboard(); break;
         case 'vehiculos': c.innerHTML = renderVehiculos(); afterRenderVehiculos(); break;
@@ -350,33 +262,95 @@
       }
     };
 
-    // ============================================================
-    // VISTA: LISTA DE SERVICIOS
-    // ============================================================
+    // ===== Nueva planilla =====
+    const iniciarNuevaPlanilla = () => {
+      abrirModal(`
+        <h2 class="text-lg font-semibold mb-3">Nueva planilla del día</h2>
+        <div class="space-y-3">
+          <div><label class="label">Fecha</label><input id="np-fecha" type="date" class="input" value="${fechaHoy()}" /></div>
+          <div>
+            <label class="label">Vehículo</label>
+            <select id="np-placa" class="input">
+              <option value="">— Seleccionar —</option>
+              ${estado.vehiculos.filter(v => v.activo !== false).map(v =>
+                `<option value="${esc(v.placa)}">${esc(v.placa)} — ${esc(v.tipo || '')} ${v.origen ? `(${esc(v.origen)})` : ''}</option>`
+              ).join('')}
+            </select>
+          </div>
+          <div><label class="label">Hora de inicio de operación</label><input id="np-hi" type="time" class="input" /></div>
+          <div class="text-xs text-gray-500">Las intervenciones se agregan después dentro de la planilla.</div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-4">
+          <button class="btn btn-ghost" data-action="np-cancelar">Cancelar</button>
+          <button class="btn btn-primary" data-action="np-crear">Crear planilla</button>
+        </div>
+      `);
+      document.querySelector('[data-action="np-cancelar"]').onclick = cerrarModal;
+      document.querySelector('[data-action="np-crear"]').onclick = crearPlanilla;
+    };
+
+    const crearPlanilla = async () => {
+      const fecha = $('np-fecha').value;
+      const placa = $('np-placa').value;
+      const hi = $('np-hi').value;
+      if (!fecha || !placa || !hi) return alert('Completa todos los campos');
+      const idPlanilla = `${fecha}_${placa}`;
+      const existing = await getDoc(doc(db, 'servicios_fds', idPlanilla));
+      if (existing.exists()) {
+        if (!confirm(`Ya existe una planilla para ${placa} el ${fecha}. ¿Abrirla?`)) return;
+        cerrarModal();
+        estado.planillaEditando = { id: idPlanilla, ...existing.data() };
+        navegarA('planilla');
+        return;
+      }
+      const payload = {
+        fecha, placa,
+        horaInicioOperacion: hi, horaFinOperacion: '',
+        estado: 'en_curso',
+        intervenciones: [],
+        diaSemana: diaSemana(fecha),
+        creadoPorCedula: estado.usuario.cedula,
+        creadoPorNombre: estado.usuario.nombre,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      };
+      try {
+        await setDoc(doc(db, 'servicios_fds', idPlanilla), payload);
+        cerrarModal();
+        estado.planillaEditando = { id: idPlanilla, ...payload };
+        navegarA('planilla');
+      } catch (e) { alert('Error: ' + e.message); }
+    };
+
+    // ===== Lista =====
     const renderLista = () => {
-      const titulo = estado.usuario.rol === 'conductor' ? 'Mis servicios' : 'Todos los servicios';
+      const lista = estado.usuario.rol === 'conductor'
+        ? estado.planillas.filter(p =>
+            p.creadoPorCedula === estado.usuario.cedula ||
+            (p.intervenciones || []).some(i => i.cedulaConductor === estado.usuario.cedula) ||
+            p.estado === 'en_curso'
+          )
+        : estado.planillas;
       let html = `
         <div class="flex items-center justify-between mb-3">
-          <h1 class="text-lg font-semibold">${titulo}</h1>
-          <button class="btn btn-primary text-sm" data-action="nuevo">+ Nuevo</button>
+          <h1 class="text-lg font-semibold">Planillas</h1>
+          <button class="btn btn-primary text-sm" data-action="nueva-planilla">+ Nueva</button>
         </div>
       `;
-      if (estado.servicios.length === 0) {
-        html += `<div class="card text-center text-gray-500 py-8">Aún no hay servicios registrados.</div>`;
+      if (lista.length === 0) {
+        html += `<div class="card text-center text-gray-500 py-8">Aún no hay planillas registradas.<br><span class="text-sm">Crea una con el botón "+ Nueva".</span></div>`;
       } else {
         html += '<div class="space-y-2">';
-        estado.servicios.forEach(s => {
+        lista.forEach(p => {
+          const n = (p.intervenciones || []).length;
           html += `
-            <div class="card cursor-pointer hover:bg-gray-50" data-servicio="${s.id}">
+            <div class="card cursor-pointer hover:bg-gray-50" data-planilla="${esc(p.id)}">
               <div class="flex items-center justify-between mb-1">
-                <div class="font-medium">${esc(s.placa)} · ${esc(s.nombreConductor)}</div>
-                ${badgeEstado(s.estado)}
+                <div class="font-medium">${esc(p.placa)} · ${esc(p.diaSemana || '')} ${esc(p.fecha)}</div>
+                ${badgeEstado(p.estado)}
               </div>
-              <div class="text-sm text-gray-600">${esc(s.diaSemana || '')} ${esc(s.fecha || '')}</div>
-              <div class="text-sm text-gray-600">📍 ${esc(s.ubicacion || '—')} — ${esc(s.lugarAtendido || '—')}</div>
-              <div class="text-xs text-gray-500 mt-1">
-                ${esc(s.horaInicio || '--:--')} → ${esc(s.horaSalida || '--:--')} · Total: ${fmtMin(s.tTotalMin)}
-              </div>
+              <div class="text-sm text-gray-600">Inicio: ${esc(p.horaInicioOperacion || '--:--')}${p.horaFinOperacion ? ` · Fin: ${esc(p.horaFinOperacion)}` : ''}</div>
+              <div class="text-xs text-gray-500 mt-1">${n} ${n === 1 ? 'intervención' : 'intervenciones'}</div>
             </div>
           `;
         });
@@ -386,354 +360,398 @@
     };
 
     const afterRenderLista = () => {
-      document.querySelector('[data-action="nuevo"]').onclick = () => navegarA('form');
-      document.querySelectorAll('[data-servicio]').forEach(el => {
+      document.querySelector('[data-action="nueva-planilla"]').onclick = iniciarNuevaPlanilla;
+      document.querySelectorAll('[data-planilla]').forEach(el => {
         el.onclick = () => {
-          estado.servicioEditando = estado.servicios.find(s => s.id === el.dataset.servicio);
-          navegarA('form');
+          estado.planillaEditando = estado.planillas.find(p => p.id === el.dataset.planilla);
+          navegarA('planilla');
         };
       });
     };
 
-    // ============================================================
-    // VISTA: FORMULARIO DE SERVICIO
-    // ============================================================
-    const renderForm = () => {
-      const s = estado.servicioEditando || {
-        fecha: fechaHoy(),
-        placa: '',
-        horaInicio: '',
-        horaLlegada: '',
-        horaSalida: '',
-        ubicacion: '',
-        lugarAtendido: '',
-        observaciones: '',
-        estado: 'borrador',
-        gps: null
-      };
-
-      const vehOpts = estado.vehiculos
-        .filter(v => v.activo !== false)
-        .map(v => `<option value="${esc(v.placa)}" ${s.placa === v.placa ? 'selected' : ''}>${esc(v.placa)} — ${esc(v.tipo || '')} ${v.origen ? `(${esc(v.origen)})` : ''}</option>`)
-        .join('');
-
+    // ===== Planilla individual =====
+    const renderPlanilla = () => {
+      const p = estado.planillaEditando;
+      if (!p) return '<div class="card">Planilla no encontrada.</div>';
+      const intervs = p.intervenciones || [];
+      const puedeEditar = p.estado === 'en_curso';
       return `
-        <div class="max-w-md mx-auto">
+        <div class="max-w-md mx-auto space-y-3">
           <div class="card">
             <div class="flex items-center justify-between mb-3">
               <div>
-                <div class="text-xs text-gray-500 uppercase tracking-wide">Servicio</div>
-                <div class="font-semibold">${diaSemana(s.fecha)} · ${esc(s.fecha)}</div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Planilla</div>
+                <div class="font-semibold">${esc(p.placa)} · ${esc(p.diaSemana || '')} ${esc(p.fecha)}</div>
               </div>
-              ${badgeEstado(s.estado)}
+              ${badgeEstado(p.estado)}
             </div>
-
-            <div class="space-y-3">
+            <div class="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <label class="label">Fecha</label>
-                <input id="f-fecha" type="date" class="input" value="${esc(s.fecha)}" />
+                <div class="text-xs text-gray-500">Inicio operación</div>
+                ${puedeEditar
+                  ? `<input id="pl-hi" type="time" class="input mt-1" value="${esc(p.horaInicioOperacion || '')}" />`
+                  : `<div class="font-medium mt-1">${esc(p.horaInicioOperacion || '--:--')}</div>`}
               </div>
-
               <div>
-                <label class="label">Conductor</label>
-                <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm">${esc(estado.usuario.nombre)}</div>
+                <div class="text-xs text-gray-500">Fin operación</div>
+                ${puedeEditar
+                  ? `<input id="pl-hf" type="time" class="input mt-1" value="${esc(p.horaFinOperacion || '')}" />`
+                  : `<div class="font-medium mt-1">${esc(p.horaFinOperacion || '--:--')}</div>`}
               </div>
-
-              <div>
-                <label class="label">Placa</label>
-                <select id="f-placa" class="input">
-                  <option value="">— Seleccionar —</option>
-                  ${vehOpts}
-                </select>
-              </div>
-
-              <div class="grid grid-cols-3 gap-2">
-                <div>
-                  <label class="label">H. Inicio</label>
-                  <input id="f-hi" type="time" class="input" value="${esc(s.horaInicio || '')}" />
-                </div>
-                <div>
-                  <label class="label">H. Llegada</label>
-                  <input id="f-hl" type="time" class="input" value="${esc(s.horaLlegada || '')}" />
-                </div>
-                <div>
-                  <label class="label">H. Salida</label>
-                  <input id="f-hs" type="time" class="input" value="${esc(s.horaSalida || '')}" />
-                </div>
-              </div>
-
-              <div>
-                <label class="label">Ubicación</label>
-                <div class="flex gap-2">
-                  <input id="f-ubi" type="text" class="input" placeholder="Ej: Bello, Antioquia" value="${esc(s.ubicacion || '')}" />
-                  <button class="btn btn-ghost text-xs whitespace-nowrap" data-action="gps">📍 GPS</button>
-                </div>
-                <div id="gps-info" class="text-xs text-gray-500 mt-1">${s.gps ? `GPS: ${s.gps.lat?.toFixed(5)}, ${s.gps.lng?.toFixed(5)}` : ''}</div>
-              </div>
-
-              <div>
-                <label class="label">Lugar atendido</label>
-                <input id="f-lug" type="text" class="input" placeholder="Ej: Subestación Niquía" value="${esc(s.lugarAtendido || '')}" />
-              </div>
-
-              <div class="bg-gray-50 rounded-lg p-3">
-                <div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Tiempos calculados</div>
-                <div id="tiempos-calc" class="space-y-1 text-sm"></div>
-              </div>
-
-              <div>
-                <label class="label">Observaciones (opcional)</label>
-                <textarea id="f-obs" class="input" style="min-height: 60px;">${esc(s.observaciones || '')}</textarea>
-              </div>
-
-              ${s.comentarioAprobacion ? `
-                <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
-                  <div class="text-xs font-semibold text-red-700 uppercase mb-1">Comentario oficina</div>
-                  <div class="text-red-700">${esc(s.comentarioAprobacion)}</div>
-                </div>
-              ` : ''}
-
-              <div class="grid grid-cols-2 gap-2 pt-2">
-                <button class="btn btn-ghost" data-action="cancelar">Cancelar</button>
-                <button class="btn btn-primary" data-action="cerrar">Cerrar servicio</button>
-              </div>
-              <button class="btn btn-ghost w-full text-sm" data-action="borrador">Guardar como borrador</button>
             </div>
+            ${p.horaInicioOperacion && p.horaFinOperacion ? `
+              <div class="mt-2 text-xs text-gray-500">Jornada total: ${fmtMin(diffMin(p.horaInicioOperacion, p.horaFinOperacion))}</div>
+            ` : ''}
+            ${p.comentarioAprobacion ? `
+              <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm mt-3">
+                <div class="text-xs font-semibold text-red-700 uppercase mb-1">Comentario oficina</div>
+                <div class="text-red-700">${esc(p.comentarioAprobacion)}</div>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="card">
+            <div class="flex items-center justify-between mb-3">
+              <div class="font-semibold">Intervenciones (${intervs.length})</div>
+              ${puedeEditar ? `<button class="btn btn-primary text-sm" data-action="add-interv">+ Agregar</button>` : ''}
+            </div>
+            ${intervs.length === 0 ? '<div class="text-center text-gray-500 py-4 text-sm">Sin intervenciones aún.</div>' : ''}
+            <div class="space-y-2">
+              ${intervs.map((iv, idx) => `
+                <div class="border rounded-lg p-3 ${iv.estado === 'rechazada' ? 'bg-red-50 border-red-200' : iv.estado === 'ok' ? 'bg-green-50 border-green-200' : ''}">
+                  <div class="flex items-center justify-between mb-1">
+                    <div class="text-sm font-medium">#${idx + 1} · ${esc(iv.horaLlegada || '--')} → ${esc(iv.horaSalida || '--')} <span class="text-gray-500">(${fmtMin(diffMin(iv.horaLlegada, iv.horaSalida))})</span></div>
+                    ${badgeInterv(iv.estado)}
+                  </div>
+                  <div class="text-sm text-gray-700">📍 ${esc(iv.ubicacion || '—')} — ${esc(iv.lugarAtendido || '—')}</div>
+                  <div class="text-xs text-gray-500 mt-1">👤 ${esc(iv.nombreConductor || '—')}</div>
+                  ${iv.observaciones ? `<div class="text-xs text-gray-600 mt-1 italic">"${esc(iv.observaciones)}"</div>` : ''}
+                  ${iv.comentarioRechazo ? `<div class="text-xs text-red-700 mt-1">Rechazo: ${esc(iv.comentarioRechazo)}</div>` : ''}
+                  ${puedeEditar ? `
+                    <div class="flex gap-3 mt-2">
+                      <button class="text-blue-700 text-xs" data-edit-iv="${idx}">Editar</button>
+                      <button class="text-red-700 text-xs" data-del-iv="${idx}">Borrar</button>
+                    </div>
+                  ` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <button class="btn btn-ghost" data-action="volver">Volver</button>
+            ${puedeEditar ? `<button class="btn btn-ok" data-action="cerrar-dia">Cerrar día</button>` : ''}
           </div>
         </div>
       `;
     };
 
-    const calcularTiemposEnVivo = () => {
-      const hi = $('f-hi')?.value, hl = $('f-hl')?.value, hs = $('f-hs')?.value;
-      const d = diffMin(hi, hl), i = diffMin(hl, hs), t = diffMin(hi, hs);
-      const box = $('tiempos-calc');
-      if (!box) return;
-      box.innerHTML = `
-        <div class="flex justify-between"><span class="text-gray-600">Desplazamiento</span><span class="font-medium">${fmtMin(d)}</span></div>
-        <div class="flex justify-between"><span class="text-gray-600">Intervención</span><span class="font-medium">${fmtMin(i)}</span></div>
-        <div class="flex justify-between border-t pt-1"><span class="text-gray-600">Total servicio</span><span class="font-medium">${fmtMin(t)}</span></div>
-      `;
+    const afterRenderPlanilla = () => {
+      const p = estado.planillaEditando;
+      if (!p) return;
+      document.querySelector('[data-action="volver"]').onclick = () => navegarA('lista');
+      const addBtn = document.querySelector('[data-action="add-interv"]');
+      if (addBtn) addBtn.onclick = () => abrirModalIntervencion(null, null);
+
+      document.querySelectorAll('[data-edit-iv]').forEach(b => b.onclick = () => {
+        const idx = parseInt(b.dataset.editIv);
+        abrirModalIntervencion(p.intervenciones[idx], idx);
+      });
+      document.querySelectorAll('[data-del-iv]').forEach(b => b.onclick = async () => {
+        const idx = parseInt(b.dataset.delIv);
+        if (!confirm('¿Borrar esta intervención?')) return;
+        const nuevas = (p.intervenciones || []).filter((_, i) => i !== idx);
+        await updateDoc(doc(db, 'servicios_fds', p.id), { intervenciones: nuevas, updatedAt: serverTimestamp() });
+      });
+
+      const hi = $('pl-hi'), hf = $('pl-hf');
+      if (hi) hi.onchange = async () => {
+        await updateDoc(doc(db, 'servicios_fds', p.id), { horaInicioOperacion: hi.value, updatedAt: serverTimestamp() });
+      };
+      if (hf) hf.onchange = async () => {
+        await updateDoc(doc(db, 'servicios_fds', p.id), { horaFinOperacion: hf.value, updatedAt: serverTimestamp() });
+      };
+
+      const cerrarBtn = document.querySelector('[data-action="cerrar-dia"]');
+      if (cerrarBtn) cerrarBtn.onclick = async () => {
+        const horaFin = $('pl-hf')?.value || p.horaFinOperacion;
+        if (!horaFin) return alert('Ingresa la hora de fin de operación antes de cerrar el día');
+        if ((p.intervenciones || []).length === 0) {
+          if (!confirm('No has registrado ninguna intervención. ¿Cerrar el día de todos modos?')) return;
+        }
+        if (!confirm('¿Cerrar el día y enviar para aprobación? No podrás editar después.')) return;
+        await updateDoc(doc(db, 'servicios_fds', p.id), {
+          horaFinOperacion: horaFin,
+          estado: 'por_aprobar',
+          updatedAt: serverTimestamp()
+        });
+        navegarA('lista');
+      };
     };
 
-    let _gpsCapturado = null;
-
-    const afterRenderForm = () => {
-      _gpsCapturado = estado.servicioEditando?.gps || null;
-      calcularTiemposEnVivo();
-      ['f-hi','f-hl','f-hs'].forEach(id => $(id).oninput = calcularTiemposEnVivo);
-
-      document.querySelector('[data-action="gps"]').onclick = () => {
-        if (!navigator.geolocation) return alert('GPS no disponible en este dispositivo');
+    // ===== Modal intervención =====
+    const abrirModalIntervencion = (iv, idx) => {
+      const datos = iv || {
+        cedulaConductor: estado.usuario.rol === 'conductor' ? estado.usuario.cedula : '',
+        nombreConductor: estado.usuario.rol === 'conductor' ? estado.usuario.nombre : '',
+        horaLlegada: '', horaSalida: '', ubicacion: '', lugarAtendido: '', observaciones: '', estado: 'pendiente'
+      };
+      const conductores = estado.usuarios.filter(u => u.activo !== false);
+      abrirModal(`
+        <h2 class="text-lg font-semibold mb-3">${idx != null ? 'Editar' : 'Nueva'} intervención</h2>
+        <div class="space-y-3">
+          <div>
+            <label class="label">Conductor</label>
+            <select id="iv-cond" class="input">
+              <option value="">— Seleccionar —</option>
+              ${conductores.map(c => `
+                <option value="${esc(c.cedula || c.id)}" ${datos.cedulaConductor === (c.cedula || c.id) ? 'selected' : ''}>
+                  ${esc(c.nombre)} (${esc(c.cedula || c.id)})
+                </option>
+              `).join('')}
+            </select>
+          </div>
+          <div class="grid grid-cols-2 gap-2">
+            <div><label class="label">H. Llegada</label><input id="iv-hl" type="time" class="input" value="${esc(datos.horaLlegada)}" /></div>
+            <div><label class="label">H. Salida</label><input id="iv-hs" type="time" class="input" value="${esc(datos.horaSalida)}" /></div>
+          </div>
+          <div>
+            <label class="label">Ubicación</label>
+            <div class="flex gap-2">
+              <input id="iv-ubi" type="text" class="input flex-1" placeholder="Ej: Bello, Antioquia" value="${esc(datos.ubicacion)}" />
+              <button class="btn btn-ghost text-xs whitespace-nowrap" data-action="iv-gps">📍 GPS</button>
+            </div>
+            <div id="iv-gps-info" class="text-xs text-gray-500 mt-1">${datos.gps ? `GPS: ${datos.gps.lat?.toFixed(5)}, ${datos.gps.lng?.toFixed(5)}` : ''}</div>
+          </div>
+          <div><label class="label">Lugar atendido</label><input id="iv-lug" type="text" class="input" placeholder="Ej: Subestación Niquía" value="${esc(datos.lugarAtendido)}" /></div>
+          <div><label class="label">Observaciones (opcional)</label><textarea id="iv-obs" class="input" style="min-height: 50px;">${esc(datos.observaciones || '')}</textarea></div>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-4">
+          <button class="btn btn-ghost" data-action="iv-cancelar">Cancelar</button>
+          <button class="btn btn-primary" data-action="iv-guardar">Guardar</button>
+        </div>
+      `);
+      let _gps = datos.gps || null;
+      document.querySelector('[data-action="iv-gps"]').onclick = () => {
+        if (!navigator.geolocation) return alert('GPS no disponible');
         navigator.geolocation.getCurrentPosition(
-          (p) => {
-            _gpsCapturado = { lat: p.coords.latitude, lng: p.coords.longitude, ts: Date.now() };
-            $('gps-info').textContent = `GPS: ${_gpsCapturado.lat.toFixed(5)}, ${_gpsCapturado.lng.toFixed(5)}`;
+          (pos) => {
+            _gps = { lat: pos.coords.latitude, lng: pos.coords.longitude, ts: Date.now() };
+            $('iv-gps-info').textContent = `GPS: ${_gps.lat.toFixed(5)}, ${_gps.lng.toFixed(5)}`;
           },
-          () => alert('No se pudo capturar la ubicación')
+          () => alert('No se pudo capturar ubicación')
         );
       };
-
-      document.querySelector('[data-action="cancelar"]').onclick = () => navegarA('lista');
-      document.querySelector('[data-action="borrador"]').onclick = () => guardarServicio('borrador');
-      document.querySelector('[data-action="cerrar"]').onclick = () => guardarServicio('por_aprobar');
-    };
-
-    const guardarServicio = async (nuevoEstado) => {
-      const placa = $('f-placa').value;
-      const fecha = $('f-fecha').value;
-      const hi = $('f-hi').value, hl = $('f-hl').value, hs = $('f-hs').value;
-      const ubi = $('f-ubi').value.trim();
-      const lug = $('f-lug').value.trim();
-      const obs = $('f-obs').value.trim();
-
-      if (!placa) return alert('Selecciona la placa');
-      if (!fecha) return alert('Selecciona la fecha');
-      if (nuevoEstado !== 'borrador' && !hi) return alert('Falta hora de inicio');
-
-      const payload = {
-        fecha,
-        cedulaConductor: estado.usuario.cedula,
-        nombreConductor: estado.usuario.nombre,
-        placa,
-        horaInicio: hi,
-        horaLlegada: hl,
-        horaSalida: hs,
-        ubicacion: ubi,
-        lugarAtendido: lug,
-        observaciones: obs,
-        estado: nuevoEstado,
-        diaSemana: diaSemana(fecha),
-        tDesplMin: diffMin(hi, hl),
-        tIntervMin: diffMin(hl, hs),
-        tTotalMin: diffMin(hi, hs),
-        gps: _gpsCapturado,
-        updatedAt: serverTimestamp()
+      document.querySelector('[data-action="iv-cancelar"]').onclick = cerrarModal;
+      document.querySelector('[data-action="iv-guardar"]').onclick = async () => {
+        const cedCond = $('iv-cond').value;
+        const conductor = conductores.find(c => (c.cedula || c.id) === cedCond);
+        if (!conductor) return alert('Selecciona un conductor');
+        const hl = $('iv-hl').value, hs = $('iv-hs').value;
+        if (!hl || !hs) return alert('Completa hora de llegada y salida');
+        const ubi = $('iv-ubi').value.trim(), lug = $('iv-lug').value.trim();
+        if (!ubi || !lug) return alert('Completa ubicación y lugar atendido');
+        const nuevaIv = {
+          id: datos.id || uuid(),
+          cedulaConductor: conductor.cedula || conductor.id,
+          nombreConductor: conductor.nombre,
+          horaLlegada: hl, horaSalida: hs,
+          ubicacion: ubi, lugarAtendido: lug,
+          observaciones: $('iv-obs').value.trim(),
+          gps: _gps,
+          estado: datos.estado || 'pendiente',
+          registradoPor: estado.usuario.cedula,
+          registradoEn: Date.now()
+        };
+        const p = estado.planillaEditando;
+        const intervs = [...(p.intervenciones || [])];
+        if (idx != null) intervs[idx] = nuevaIv;
+        else intervs.push(nuevaIv);
+        try {
+          await updateDoc(doc(db, 'servicios_fds', p.id), { intervenciones: intervs, updatedAt: serverTimestamp() });
+          cerrarModal();
+        } catch (e) { alert('Error: ' + e.message); }
       };
-
-      try {
-        if (estado.servicioEditando?.id) {
-          await updateDoc(doc(db, 'servicios_fds', estado.servicioEditando.id), payload);
-        } else {
-          payload.createdAt = serverTimestamp();
-          await addDoc(collection(db, 'servicios_fds'), payload);
-        }
-        estado.servicioEditando = null;
-        navegarA('lista');
-      } catch (e) {
-        alert('Error guardando: ' + e.message);
-      }
     };
 
-    // ============================================================
-    // VISTA: APROBACIONES
-    // ============================================================
+    // ===== Aprobaciones =====
     const renderAprobaciones = () => {
-      const filtrados = estado.servicios.filter(s => s.estado === estado.filtroEstado);
+      const filtradas = estado.planillas.filter(p => p.estado === estado.filtroEstado);
       return `
         <div class="flex items-center justify-between mb-3">
           <h1 class="text-lg font-semibold">Aprobaciones</h1>
           <select id="filtro-estado" class="input" style="width:auto;font-size:0.875rem;">
             <option value="por_aprobar" ${estado.filtroEstado === 'por_aprobar' ? 'selected' : ''}>Por aprobar</option>
-            <option value="aprobado" ${estado.filtroEstado === 'aprobado' ? 'selected' : ''}>Aprobados</option>
-            <option value="rechazado" ${estado.filtroEstado === 'rechazado' ? 'selected' : ''}>Rechazados</option>
-            <option value="borrador" ${estado.filtroEstado === 'borrador' ? 'selected' : ''}>Borradores</option>
+            <option value="aprobado" ${estado.filtroEstado === 'aprobado' ? 'selected' : ''}>Aprobadas</option>
+            <option value="rechazado" ${estado.filtroEstado === 'rechazado' ? 'selected' : ''}>Rechazadas</option>
+            <option value="en_curso" ${estado.filtroEstado === 'en_curso' ? 'selected' : ''}>En curso</option>
           </select>
         </div>
         <div class="card flex justify-between items-center mb-3">
           <span class="text-sm text-gray-600">Total (${ESTADOS[estado.filtroEstado].txt})</span>
-          <span class="text-lg font-semibold">${filtrados.length}</span>
+          <span class="text-lg font-semibold">${filtradas.length}</span>
         </div>
-        ${filtrados.length === 0 ? '<div class="card text-center text-gray-500 py-8">Sin registros.</div>' : ''}
+        ${filtradas.length === 0 ? '<div class="card text-center text-gray-500 py-8">Sin registros.</div>' : ''}
         <div class="space-y-2">
-          ${filtrados.map(s => `
-            <div class="card">
-              <div class="flex items-center justify-between mb-1">
-                <div class="font-medium">${esc(s.placa)} · ${esc(s.nombreConductor)}</div>
-                <span class="text-xs text-gray-500">${esc(s.fecha)}</span>
-              </div>
-              <div class="text-sm text-gray-600">📍 ${esc(s.ubicacion || '—')} — ${esc(s.lugarAtendido || '—')}</div>
-              <div class="text-xs text-gray-500 mt-1">
-                ${esc(s.horaInicio || '--')} → ${esc(s.horaSalida || '--')} · Despl: ${fmtMin(s.tDesplMin)} · Interv: ${fmtMin(s.tIntervMin)}
-              </div>
-              ${s.observaciones ? `<div class="text-xs text-gray-600 mt-2 italic">"${esc(s.observaciones)}"</div>` : ''}
-              ${s.comentarioAprobacion ? `<div class="text-xs text-red-700 mt-2">Oficina: ${esc(s.comentarioAprobacion)}</div>` : ''}
-              ${estado.filtroEstado === 'por_aprobar' ? `
-                <div class="grid grid-cols-3 gap-2 mt-3">
-                  <button class="btn btn-ok text-sm" data-aprobar="${s.id}">Aprobar</button>
-                  <button class="btn btn-err text-sm" data-rechazar="${s.id}">Rechazar</button>
-                  <button class="btn btn-ghost text-sm" data-editar="${s.id}">Editar</button>
+          ${filtradas.map(p => {
+            const intervs = p.intervenciones || [];
+            const rech = intervs.filter(i => i.estado === 'rechazada').length;
+            return `
+              <div class="card">
+                <div class="flex items-center justify-between mb-1">
+                  <div class="font-medium">${esc(p.placa)} · ${esc(p.diaSemana || '')} ${esc(p.fecha)}</div>
+                  ${badgeEstado(p.estado)}
                 </div>
-              ` : ''}
-            </div>
-          `).join('')}
+                <div class="text-sm text-gray-600">
+                  Operación: ${esc(p.horaInicioOperacion || '--')} → ${esc(p.horaFinOperacion || '--')} · ${intervs.length} intervenciones
+                  ${rech > 0 ? ` · <span class="text-red-700">${rech} rechazadas</span>` : ''}
+                </div>
+                <button class="btn btn-ghost text-sm mt-3 w-full" data-revisar="${esc(p.id)}">Ver y revisar</button>
+              </div>
+            `;
+          }).join('')}
         </div>
       `;
     };
 
     const afterRenderAprobaciones = () => {
       $('filtro-estado').onchange = (e) => { estado.filtroEstado = e.target.value; render(); };
-      document.querySelectorAll('[data-aprobar]').forEach(b => b.onclick = () => decidirServicio(b.dataset.aprobar, 'aprobado'));
-      document.querySelectorAll('[data-rechazar]').forEach(b => b.onclick = async () => {
-        const c = prompt('Motivo del rechazo:');
-        if (c == null) return;
-        decidirServicio(b.dataset.rechazar, 'rechazado', c);
-      });
-      document.querySelectorAll('[data-editar]').forEach(b => b.onclick = () => {
-        estado.servicioEditando = estado.servicios.find(s => s.id === b.dataset.editar);
-        navegarA('form');
-      });
+      document.querySelectorAll('[data-revisar]').forEach(b => b.onclick = () =>
+        abrirModalRevision(estado.planillas.find(p => p.id === b.dataset.revisar))
+      );
     };
 
-    const decidirServicio = async (id, nuevoEstado, comentario = '') => {
-      try {
-        await updateDoc(doc(db, 'servicios_fds', id), {
-          estado: nuevoEstado,
-          aprobadoPorCedula: estado.usuario.cedula,
-          aprobadoPorNombre: estado.usuario.nombre,
-          comentarioAprobacion: comentario,
-          fechaAprobacion: serverTimestamp()
+    const abrirModalRevision = (p) => {
+      const intervs = JSON.parse(JSON.stringify(p.intervenciones || []));
+      const draw = () => {
+        $('modal-content').innerHTML = `
+          <h2 class="text-lg font-semibold mb-1">Revisar planilla</h2>
+          <div class="text-sm text-gray-600 mb-3">${esc(p.placa)} · ${esc(p.diaSemana || '')} ${esc(p.fecha)} · Operación: ${esc(p.horaInicioOperacion)} → ${esc(p.horaFinOperacion || '--')}</div>
+          <div class="space-y-2 mb-3 max-h-96 overflow-y-auto">
+            ${intervs.map((iv, idx) => `
+              <div class="border rounded-lg p-2 text-sm ${iv.estado === 'rechazada' ? 'bg-red-50' : iv.estado === 'ok' ? 'bg-green-50' : ''}">
+                <div class="flex items-center justify-between">
+                  <div class="text-xs font-medium">#${idx + 1} · ${esc(iv.horaLlegada)} → ${esc(iv.horaSalida)}</div>
+                  ${badgeInterv(iv.estado)}
+                </div>
+                <div class="text-xs mt-1">${esc(iv.ubicacion)} — ${esc(iv.lugarAtendido)}</div>
+                <div class="text-xs text-gray-500">${esc(iv.nombreConductor)}</div>
+                ${iv.observaciones ? `<div class="text-xs text-gray-600 italic">"${esc(iv.observaciones)}"</div>` : ''}
+                ${iv.comentarioRechazo ? `<div class="text-xs text-red-700">Motivo: ${esc(iv.comentarioRechazo)}</div>` : ''}
+                <div class="flex gap-3 mt-2">
+                  <button class="text-green-700 text-xs" data-ok="${idx}">Marcar OK</button>
+                  <button class="text-red-700 text-xs" data-rech="${idx}">Rechazar</button>
+                  <button class="text-gray-500 text-xs" data-pend="${idx}">Sin revisar</button>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+          <div class="text-xs text-gray-500 mb-3">Al "Aprobar planilla" las rechazadas quedan así; las demás pasan a OK.</div>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="btn btn-ghost" data-action="rev-cerrar">Cerrar</button>
+            <button class="btn btn-err" data-action="rev-rech-todo">Rechazar todo</button>
+            <button class="btn btn-ok" data-action="rev-aprobar">Aprobar</button>
+          </div>
+        `;
+        ligar();
+      };
+      const ligar = () => {
+        document.querySelectorAll('[data-ok]').forEach(b => b.onclick = () => {
+          intervs[+b.dataset.ok].estado = 'ok';
+          intervs[+b.dataset.ok].comentarioRechazo = '';
+          draw();
         });
-      } catch (e) {
-        alert('Error: ' + e.message);
-      }
+        document.querySelectorAll('[data-rech]').forEach(b => b.onclick = () => {
+          const c = prompt('Motivo del rechazo:'); if (c == null) return;
+          intervs[+b.dataset.rech].estado = 'rechazada';
+          intervs[+b.dataset.rech].comentarioRechazo = c;
+          draw();
+        });
+        document.querySelectorAll('[data-pend]').forEach(b => b.onclick = () => {
+          intervs[+b.dataset.pend].estado = 'pendiente';
+          intervs[+b.dataset.pend].comentarioRechazo = '';
+          draw();
+        });
+        document.querySelector('[data-action="rev-cerrar"]').onclick = cerrarModal;
+        document.querySelector('[data-action="rev-rech-todo"]').onclick = async () => {
+          const c = prompt('Motivo del rechazo de TODA la planilla:'); if (c == null) return;
+          intervs.forEach(iv => { iv.estado = 'rechazada'; iv.comentarioRechazo = c; });
+          await updateDoc(doc(db, 'servicios_fds', p.id), {
+            estado: 'rechazado', comentarioAprobacion: c, intervenciones: intervs,
+            aprobadoPorCedula: estado.usuario.cedula, aprobadoPorNombre: estado.usuario.nombre,
+            fechaAprobacion: serverTimestamp()
+          });
+          cerrarModal();
+        };
+        document.querySelector('[data-action="rev-aprobar"]').onclick = async () => {
+          intervs.forEach(iv => { if (iv.estado !== 'rechazada') iv.estado = 'ok'; });
+          await updateDoc(doc(db, 'servicios_fds', p.id), {
+            estado: 'aprobado', intervenciones: intervs,
+            aprobadoPorCedula: estado.usuario.cedula, aprobadoPorNombre: estado.usuario.nombre,
+            fechaAprobacion: serverTimestamp()
+          });
+          cerrarModal();
+        };
+      };
+      abrirModal('');
+      draw();
     };
 
-    // ============================================================
-    // VISTA: DASHBOARD
-    // ============================================================
+    // ===== Dashboard =====
     const renderDashboard = () => {
       if (!estado.dashDesde) estado.dashDesde = fechaHaceDias(30);
       if (!estado.dashHasta) estado.dashHasta = fechaHoy();
-
-      const filtrados = estado.servicios.filter(s =>
-        s.fecha >= estado.dashDesde && s.fecha <= estado.dashHasta
-      );
-
-      const total = filtrados.length;
-      const aprobados = filtrados.filter(s => s.estado === 'aprobado').length;
-      const porAprobar = filtrados.filter(s => s.estado === 'por_aprobar').length;
-      const rechazados = filtrados.filter(s => s.estado === 'rechazado').length;
-      const tTotal = filtrados.reduce((a, s) => a + (s.tTotalMin || 0), 0);
-      const pct = total ? Math.round((aprobados / total) * 100) : 0;
-
-      const porConductor = {};
-      const porVeh = {};
-      const porUbicacion = {};
-      filtrados.forEach(s => {
-        if (s.nombreConductor) porConductor[s.nombreConductor] = (porConductor[s.nombreConductor] || 0) + 1;
-        if (s.placa) porVeh[s.placa] = (porVeh[s.placa] || 0) + 1;
-        if (s.ubicacion) porUbicacion[s.ubicacion] = (porUbicacion[s.ubicacion] || 0) + 1;
+      const filt = estado.planillas.filter(p => p.fecha >= estado.dashDesde && p.fecha <= estado.dashHasta);
+      const tot = filt.length;
+      const aprob = filt.filter(p => p.estado === 'aprobado').length;
+      const porAp = filt.filter(p => p.estado === 'por_aprobar').length;
+      const enC = filt.filter(p => p.estado === 'en_curso').length;
+      const rech = filt.filter(p => p.estado === 'rechazado').length;
+      let totIv = 0, ivOk = 0, ivRech = 0, minIv = 0, minJor = 0;
+      const porCond = {}, porVeh = {}, porUbi = {};
+      filt.forEach(p => {
+        const iv = p.intervenciones || [];
+        totIv += iv.length;
+        ivOk += iv.filter(i => i.estado === 'ok').length;
+        ivRech += iv.filter(i => i.estado === 'rechazada').length;
+        iv.forEach(i => {
+          minIv += diffMin(i.horaLlegada, i.horaSalida) || 0;
+          if (i.nombreConductor) porCond[i.nombreConductor] = (porCond[i.nombreConductor] || 0) + 1;
+          if (i.ubicacion) porUbi[i.ubicacion] = (porUbi[i.ubicacion] || 0) + 1;
+        });
+        if (p.placa) porVeh[p.placa] = (porVeh[p.placa] || 0) + 1;
+        if (p.horaInicioOperacion && p.horaFinOperacion) minJor += diffMin(p.horaInicioOperacion, p.horaFinOperacion) || 0;
       });
-      const rkCond = Object.entries(porConductor).sort((a,b) => b[1]-a[1]).slice(0,5);
-      const rkVeh = Object.entries(porVeh).sort((a,b) => b[1]-a[1]).slice(0,5);
-      const rkUbi = Object.entries(porUbicacion).sort((a,b) => b[1]-a[1]).slice(0,5);
-
-      const kpi = (label, valor, extra='', cls='') => `
-        <div class="card">
-          <div class="text-xs text-gray-500 uppercase tracking-wide">${label}</div>
-          <div class="text-2xl font-semibold mt-1 ${cls}">${valor}${extra ? `<span class="text-sm text-gray-500 ml-2">${extra}</span>` : ''}</div>
-        </div>
-      `;
-
-      const ranking = (titulo, items) => `
-        <div class="card">
-          <div class="font-semibold mb-2">${titulo}</div>
-          ${items.length === 0 ? '<div class="text-sm text-gray-500">Sin datos</div>' : ''}
-          ${items.map(([k, v]) => `
-            <div class="flex justify-between py-1 text-sm border-b last:border-0">
-              <span>${esc(k)}</span><span class="font-medium">${v}</span>
-            </div>
-          `).join('')}
-        </div>
-      `;
-
+      const pct = tot ? Math.round((aprob/tot)*100) : 0;
+      const rkC = Object.entries(porCond).sort((a,b)=>b[1]-a[1]).slice(0,5);
+      const rkV = Object.entries(porVeh).sort((a,b)=>b[1]-a[1]).slice(0,5);
+      const rkU = Object.entries(porUbi).sort((a,b)=>b[1]-a[1]).slice(0,5);
+      const kpi = (l,v,e='',c='') => `<div class="card"><div class="text-xs text-gray-500 uppercase tracking-wide">${l}</div><div class="text-2xl font-semibold mt-1 ${c}">${v}${e?`<span class="text-sm text-gray-500 ml-2">${e}</span>`:''}</div></div>`;
+      const rk = (t, items) => `<div class="card"><div class="font-semibold mb-2">${t}</div>${items.length===0?'<div class="text-sm text-gray-500">Sin datos</div>':''}${items.map(([k,v])=>`<div class="flex justify-between py-1 text-sm border-b last:border-0"><span>${esc(k)}</span><span class="font-medium">${v}</span></div>`).join('')}</div>`;
       return `
         <h1 class="text-lg font-semibold mb-3">Dashboard</h1>
         <div class="card grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label class="label">Desde</label>
-            <input id="dash-desde" type="date" class="input" value="${estado.dashDesde}" />
-          </div>
-          <div>
-            <label class="label">Hasta</label>
-            <input id="dash-hasta" type="date" class="input" value="${estado.dashHasta}" />
-          </div>
+          <div><label class="label">Desde</label><input id="dash-desde" type="date" class="input" value="${estado.dashDesde}" /></div>
+          <div><label class="label">Hasta</label><input id="dash-hasta" type="date" class="input" value="${estado.dashHasta}" /></div>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-          ${kpi('Total servicios', total)}
-          ${kpi('Aprobados', aprobados, `${pct}%`)}
-          ${kpi('Por aprobar', porAprobar, '', 'text-amber-700')}
-          ${kpi('Rechazados', rechazados, '', 'text-red-700')}
-          ${kpi('Horas operación', fmtMin(tTotal))}
-          ${kpi('Conductores', Object.keys(porConductor).length)}
-          ${kpi('Vehículos', Object.keys(porVeh).length)}
-          ${kpi('Ubicaciones', Object.keys(porUbicacion).length)}
+          ${kpi('Planillas', tot)}
+          ${kpi('Aprobadas', aprob, `${pct}%`)}
+          ${kpi('Por aprobar', porAp, '', 'text-amber-700')}
+          ${kpi('En curso', enC, '', 'text-blue-700')}
+          ${kpi('Total intervenc.', totIv)}
+          ${kpi('Interv. OK', ivOk)}
+          ${kpi('Interv. rechaz.', ivRech, '', 'text-red-700')}
+          ${kpi('Rechazadas', rech, '', 'text-red-700')}
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+          ${kpi('Horas intervención', fmtMin(minIv))}
+          ${kpi('Horas jornada', fmtMin(minJor))}
         </div>
         <div class="grid md:grid-cols-3 gap-3">
-          ${ranking('Top conductores', rkCond)}
-          ${ranking('Top vehículos', rkVeh)}
-          ${ranking('Top ubicaciones', rkUbi)}
+          ${rk('Top conductores', rkC)}
+          ${rk('Top vehículos', rkV)}
+          ${rk('Top ubicaciones', rkU)}
         </div>
       `;
     };
@@ -743,41 +761,21 @@
       $('dash-hasta').onchange = (e) => { estado.dashHasta = e.target.value; render(); };
     };
 
-    // ============================================================
-    // VISTA: VEHÍCULOS
-    // ============================================================
+    // ===== Vehículos =====
     let _vehEditando = null;
-
     const renderVehiculos = () => {
       const v = _vehEditando || { placa: '', tipo: 'Microbús', origen: 'Propio', propietario: '', activo: true };
-      const TIPOS = ['Bus', 'Microbús', 'Van', 'Camioneta', 'Auto', 'Otro'];
-      const ORIGENES = ['Propio', 'Tercero', 'Cliente', 'Otra línea'];
-
+      const TIPOS = ['Bus','Microbús','Van','Camioneta','Auto','Otro'];
+      const ORIGENES = ['Propio','Tercero','Cliente','Otra línea'];
       return `
         <h1 class="text-lg font-semibold mb-3">Vehículos del servicio</h1>
         <div class="card mb-3">
           <div class="font-semibold mb-3">${_vehEditando ? 'Editar' : 'Agregar'} vehículo</div>
           <div class="grid md:grid-cols-2 gap-3">
-            <div>
-              <label class="label">Placa</label>
-              <input id="v-placa" class="input" value="${esc(v.placa)}" ${_vehEditando ? 'disabled' : ''} placeholder="EQX123" />
-            </div>
-            <div>
-              <label class="label">Tipo</label>
-              <select id="v-tipo" class="input">
-                ${TIPOS.map(t => `<option ${v.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="label">Origen</label>
-              <select id="v-origen" class="input">
-                ${ORIGENES.map(o => `<option ${v.origen === o ? 'selected' : ''}>${o}</option>`).join('')}
-              </select>
-            </div>
-            <div>
-              <label class="label">Propietario / Empresa</label>
-              <input id="v-prop" class="input" value="${esc(v.propietario || '')}" />
-            </div>
+            <div><label class="label">Placa</label><input id="v-placa" class="input" value="${esc(v.placa)}" ${_vehEditando ? 'disabled' : ''} placeholder="EQX123" /></div>
+            <div><label class="label">Tipo</label><select id="v-tipo" class="input">${TIPOS.map(t => `<option ${v.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+            <div><label class="label">Origen</label><select id="v-origen" class="input">${ORIGENES.map(o => `<option ${v.origen === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div>
+            <div><label class="label">Propietario</label><input id="v-prop" class="input" value="${esc(v.propietario || '')}" /></div>
             <div class="flex items-center gap-2 md:col-span-2">
               <input id="v-activo" type="checkbox" ${v.activo !== false ? 'checked' : ''} />
               <label for="v-activo" class="text-sm">Activo</label>
@@ -788,21 +786,11 @@
             ${_vehEditando ? '<button class="btn btn-ghost" data-action="v-cancelar">Cancelar</button>' : ''}
           </div>
         </div>
-
         <div class="card">
           <div class="font-semibold mb-2">Listado (${estado.vehiculos.length})</div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left border-b">
-                  <th class="py-2">Placa</th>
-                  <th>Tipo</th>
-                  <th>Origen</th>
-                  <th>Propietario</th>
-                  <th>Estado</th>
-                  <th></th>
-                </tr>
-              </thead>
+              <thead><tr class="text-left border-b"><th class="py-2">Placa</th><th>Tipo</th><th>Origen</th><th>Propietario</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 ${estado.vehiculos.map(v => `
                   <tr class="border-b last:border-0">
@@ -810,11 +798,7 @@
                     <td>${esc(v.tipo || '')}</td>
                     <td>${esc(v.origen || '')}</td>
                     <td class="text-gray-600">${esc(v.propietario || '—')}</td>
-                    <td>
-                      <span class="badge ${v.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
-                        ${v.activo !== false ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
+                    <td><span class="badge ${v.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">${v.activo !== false ? 'Activo' : 'Inactivo'}</span></td>
                     <td class="text-right whitespace-nowrap">
                       <button class="text-blue-700 text-xs mr-2" data-veh-edit="${esc(v.id)}">Editar</button>
                       <button class="text-red-700 text-xs" data-veh-del="${esc(v.id)}">Eliminar</button>
@@ -845,54 +829,28 @@
     const guardarVehiculo = async () => {
       const placa = $('v-placa').value.trim().toUpperCase().replace(/\s/g, '');
       if (!placa) return alert('Placa requerida');
-      const payload = {
-        placa,
-        tipo: $('v-tipo').value,
-        origen: $('v-origen').value,
-        propietario: $('v-prop').value.trim(),
-        activo: $('v-activo').checked
-      };
+      const payload = { placa, tipo: $('v-tipo').value, origen: $('v-origen').value, propietario: $('v-prop').value.trim(), activo: $('v-activo').checked };
       try {
         await setDoc(doc(db, 'vehiculos_fds', placa), payload);
         _vehEditando = null;
         render();
-      } catch (e) {
-        alert('Error: ' + e.message);
-      }
+      } catch (e) { alert('Error: ' + e.message); }
     };
 
-    // ============================================================
-    // VISTA: USUARIOS
-    // ============================================================
+    // ===== Usuarios =====
     let _userEditando = null;
-
     const renderUsuarios = () => {
       const u = _userEditando || { cedula: '', nombre: '', telefono: '', rol: 'conductor', activo: true };
-      const ROLES = ['conductor', 'coordinador', 'gerencia'];
-
+      const ROLES = ['conductor','coordinador','gerencia'];
       return `
         <h1 class="text-lg font-semibold mb-3">Usuarios</h1>
         <div class="card mb-3">
           <div class="font-semibold mb-3">${_userEditando ? 'Editar' : 'Agregar'} usuario</div>
           <div class="grid md:grid-cols-2 gap-3">
-            <div>
-              <label class="label">Cédula</label>
-              <input id="u-cedula" class="input" value="${esc(u.cedula)}" ${_userEditando ? 'disabled' : ''} inputmode="numeric" />
-            </div>
-            <div>
-              <label class="label">Nombre completo</label>
-              <input id="u-nombre" class="input" value="${esc(u.nombre)}" />
-            </div>
-            <div>
-              <label class="label">Teléfono</label>
-              <input id="u-tel" class="input" value="${esc(u.telefono || '')}" inputmode="tel" />
-            </div>
-            <div>
-              <label class="label">Rol</label>
-              <select id="u-rol" class="input">
-                ${ROLES.map(r => `<option ${u.rol === r ? 'selected' : ''}>${r}</option>`).join('')}
-              </select>
-            </div>
+            <div><label class="label">Cédula</label><input id="u-cedula" class="input" value="${esc(u.cedula || u.id || '')}" ${_userEditando ? 'disabled' : ''} inputmode="numeric" /></div>
+            <div><label class="label">Nombre completo</label><input id="u-nombre" class="input" value="${esc(u.nombre)}" /></div>
+            <div><label class="label">Teléfono</label><input id="u-tel" class="input" value="${esc(u.telefono || '')}" inputmode="tel" /></div>
+            <div><label class="label">Rol</label><select id="u-rol" class="input">${ROLES.map(r => `<option ${u.rol === r ? 'selected' : ''}>${r}</option>`).join('')}</select></div>
             <div class="flex items-center gap-2 md:col-span-2">
               <input id="u-activo" type="checkbox" ${u.activo !== false ? 'checked' : ''} />
               <label for="u-activo" class="text-sm">Activo</label>
@@ -903,21 +861,11 @@
             ${_userEditando ? '<button class="btn btn-ghost" data-action="u-cancelar">Cancelar</button>' : ''}
           </div>
         </div>
-
         <div class="card">
           <div class="font-semibold mb-2">Usuarios (${estado.usuarios.length})</div>
           <div class="overflow-x-auto">
             <table class="w-full text-sm">
-              <thead>
-                <tr class="text-left border-b">
-                  <th class="py-2">Cédula</th>
-                  <th>Nombre</th>
-                  <th>Teléfono</th>
-                  <th>Rol</th>
-                  <th>Estado</th>
-                  <th></th>
-                </tr>
-              </thead>
+              <thead><tr class="text-left border-b"><th class="py-2">Cédula</th><th>Nombre</th><th>Teléfono</th><th>Rol</th><th>Estado</th><th></th></tr></thead>
               <tbody>
                 ${estado.usuarios.map(u => `
                   <tr class="border-b last:border-0">
@@ -925,14 +873,8 @@
                     <td>${esc(u.nombre)}</td>
                     <td class="text-gray-600">${esc(u.telefono || '—')}</td>
                     <td><span class="badge bg-blue-100 text-blue-700 capitalize">${esc(u.rol)}</span></td>
-                    <td>
-                      <span class="badge ${u.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
-                        ${u.activo !== false ? 'Activo' : 'Inactivo'}
-                      </span>
-                    </td>
-                    <td class="text-right whitespace-nowrap">
-                      <button class="text-blue-700 text-xs" data-user-edit="${esc(u.id)}">Editar</button>
-                    </td>
+                    <td><span class="badge ${u.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">${u.activo !== false ? 'Activo' : 'Inactivo'}</span></td>
+                    <td class="text-right"><button class="text-blue-700 text-xs" data-user-edit="${esc(u.id)}">Editar</button></td>
                   </tr>
                 `).join('')}
               </tbody>
@@ -955,36 +897,26 @@
     const guardarUsuario = async () => {
       const cedula = $('u-cedula').value.trim();
       const nombre = $('u-nombre').value.trim();
-      if (!cedula || !nombre) return alert('Cédula y nombre son obligatorios');
-      const payload = {
-        cedula,
-        nombre,
-        telefono: $('u-tel').value.trim(),
-        rol: $('u-rol').value,
-        activo: $('u-activo').checked
-      };
+      if (!cedula || !nombre) return alert('Cédula y nombre obligatorios');
+      const payload = { cedula, nombre, telefono: $('u-tel').value.trim(), rol: $('u-rol').value, activo: $('u-activo').checked };
       try {
         await setDoc(doc(db, 'usuarios_fds', cedula), payload);
         _userEditando = null;
         render();
-      } catch (e) {
-        alert('Error: ' + e.message);
-      }
+      } catch (e) { alert('Error: ' + e.message); }
     };
 
-    // ============================================================
-    // INICIALIZACIÓN
-    // ============================================================
+    // ===== Modal helpers =====
+    const abrirModal = (html) => { $('modal-content').innerHTML = html; $('modal').classList.remove('hidden'); };
+    const cerrarModal = () => { $('modal').classList.add('hidden'); $('modal-content').innerHTML = ''; };
+
+    // ===== Init =====
     $('btn-login').onclick = login;
     $('input-cedula').onkeydown = (e) => { if (e.key === 'Enter') login(); };
     $('btn-logout').onclick = logout;
 
-    // Restaurar sesión si existe
     const sesion = cargarSesion();
-    if (sesion) {
-      estado.usuario = sesion;
-      entrarApp();
-    }
+    if (sesion) { estado.usuario = sesion; entrarApp(); }
   </script>
 </body>
 </html>
