@@ -1378,7 +1378,22 @@
     $('btn-logout').onclick = logout;
 
     const sesion = cargarSesion();
-    if (sesion) { estado.usuario = sesion; entrarApp(); }
+    if (sesion) {
+      // Refrescar siempre desde Firestore para tener placaAsignada y otros campos actualizados
+      getDoc(doc(db, 'usuarios_fds', sesion.cedula || sesion.id)).then(snap => {
+        if (snap.exists() && snap.data().activo !== false) {
+          estado.usuario = { cedula: sesion.cedula || sesion.id, ...snap.data() };
+          guardarSesion(estado.usuario);
+        } else {
+          estado.usuario = sesion;
+        }
+        entrarApp();
+      }).catch(() => {
+        // Si falla la red, usar la sesión guardada
+        estado.usuario = sesion;
+        entrarApp();
+      });
+    }
   </script>
 </body>
 </html>
