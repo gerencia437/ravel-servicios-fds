@@ -1,0 +1,990 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#1e40af" />
+  <title>Ravel · Servicios Fin de Semana</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; }
+    .hidden { display: none !important; }
+    .input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 0.5rem; outline: none; }
+    .input:focus { border-color: #1e40af; box-shadow: 0 0 0 2px rgba(30, 64, 175, 0.2); }
+    .label { display: block; font-size: 0.7rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem; }
+    .btn { padding: 0.5rem 1rem; border-radius: 0.5rem; font-weight: 500; transition: all 0.15s; cursor: pointer; border: none; }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: #1e40af; color: white; }
+    .btn-primary:hover { background: #1e3a8a; }
+    .btn-ok { background: #15803d; color: white; }
+    .btn-ok:hover { background: #166534; }
+    .btn-err { background: #b91c1c; color: white; }
+    .btn-err:hover { background: #991b1b; }
+    .btn-ghost { background: white; color: #374151; border: 1px solid #d1d5db; }
+    .btn-ghost:hover { background: #f9fafb; }
+    .card { background: white; border-radius: 0.75rem; border: 1px solid #e5e7eb; padding: 1rem; }
+    .badge { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 0.25rem; font-size: 0.75rem; font-weight: 500; }
+    .nav-link { padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; color: #4b5563; cursor: pointer; white-space: nowrap; }
+    .nav-link:hover { background: #f3f4f6; }
+    .nav-link.active { background: #1e40af; color: white; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+  <!-- ============== VISTA: LOGIN ============== -->
+  <div id="view-login" class="min-h-screen flex items-center justify-center p-4">
+    <div class="card w-full max-w-sm">
+      <div class="text-center mb-6">
+        <div class="text-2xl font-bold text-blue-800">Transporte Ravel</div>
+        <div class="text-sm text-gray-500 mt-1">Servicios fin de semana</div>
+      </div>
+      <div class="space-y-3">
+        <div>
+          <label class="label">Cédula</label>
+          <input id="input-cedula" type="text" inputmode="numeric" class="input" placeholder="Ej: 71234567" autofocus />
+        </div>
+        <div id="login-error" class="text-sm text-red-700 hidden"></div>
+        <button id="btn-login" class="btn btn-primary w-full">Ingresar</button>
+        <div class="text-xs text-gray-400 text-center pt-2">
+          Si es tu primera vez, contacta al administrador para que te dé acceso.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== VISTA: APP PRINCIPAL ============== -->
+  <div id="view-main" class="hidden">
+    <header class="bg-white border-b sticky top-0 z-10">
+      <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+        <div>
+          <div class="font-bold text-blue-800">Ravel</div>
+          <div class="text-xs text-gray-500">Servicios fin de semana</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="text-right hidden sm:block">
+            <div id="header-nombre" class="text-sm font-medium"></div>
+            <div id="header-rol" class="text-xs text-gray-500 capitalize"></div>
+          </div>
+          <button id="btn-logout" class="btn btn-ghost text-sm">Salir</button>
+        </div>
+      </div>
+      <nav id="nav-tabs" class="max-w-5xl mx-auto px-4 pb-2 flex gap-1 overflow-x-auto"></nav>
+    </header>
+
+    <main class="max-w-5xl mx-auto p-4">
+      <div id="content"></div>
+    </main>
+  </div>
+
+  <!-- ============== MODAL GENÉRICO ============== -->
+  <div id="modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto p-5">
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
+    import {
+      getFirestore, collection, doc, getDoc, getDocs, setDoc, addDoc,
+      updateDoc, deleteDoc, query, where, orderBy, onSnapshot, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js';
+
+    // ============================================================
+    // CONFIGURACIÓN FIREBASE
+    // ⚠️ REEMPLAZA con la config del proyecto transporte-ravel
+    //    (puedes usar la misma de ravel-mantenimiento)
+    // ============================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyAmfFabMCKEDvZNdpIYA_HpIMAurpT_izg",
+      authDomain: "transporte-ravel.firebaseapp.com",
+      projectId: "transporte-ravel",
+      storageBucket: "transporte-ravel.appspot.com",
+      messagingSenderId: "349820780179",
+      appId: "1:349820780179:web:e330d14a09d44f63019766"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // ============================================================
+    // ESTADO GLOBAL
+    // ============================================================
+    const estado = {
+      usuario: null,
+      vista: 'lista',
+      servicioEditando: null,
+      vehiculos: [],
+      servicios: [],
+      usuarios: [],
+      filtroEstado: 'por_aprobar',
+      dashDesde: '',
+      dashHasta: '',
+      unsubServicios: null,
+      unsubVehiculos: null,
+      unsubUsuarios: null
+    };
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
+    const $ = (id) => document.getElementById(id);
+
+    const aMin = (h) => {
+      if (!h) return null;
+      const [hh, mm] = h.split(':').map(Number);
+      return hh * 60 + mm;
+    };
+
+    const diffMin = (ini, fin) => {
+      const a = aMin(ini), b = aMin(fin);
+      if (a == null || b == null) return null;
+      let d = b - a;
+      if (d < 0) d += 1440;
+      return d;
+    };
+
+    const fmtMin = (m) => {
+      if (m == null) return '—';
+      const h = Math.floor(m / 60);
+      const mm = m % 60;
+      if (h === 0) return `${mm} min`;
+      if (mm === 0) return `${h}h`;
+      return `${h}h ${mm}min`;
+    };
+
+    const diaSemana = (iso) => {
+      if (!iso) return '';
+      const d = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+      const [y, m, dd] = iso.split('-').map(Number);
+      return d[new Date(y, m - 1, dd).getDay()];
+    };
+
+    const fechaHoy = () => new Date().toISOString().slice(0, 10);
+
+    const fechaHaceDias = (n) => {
+      const d = new Date();
+      d.setDate(d.getDate() - n);
+      return d.toISOString().slice(0, 10);
+    };
+
+    const esc = (s) => {
+      if (s == null) return '';
+      return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    };
+
+    const ESTADOS = {
+      borrador: { txt: 'Borrador', cls: 'bg-gray-100 text-gray-700' },
+      en_ruta: { txt: 'En ruta', cls: 'bg-blue-100 text-blue-700' },
+      por_aprobar: { txt: 'Por aprobar', cls: 'bg-amber-100 text-amber-700' },
+      aprobado: { txt: 'Aprobado', cls: 'bg-green-100 text-green-700' },
+      rechazado: { txt: 'Rechazado', cls: 'bg-red-100 text-red-700' }
+    };
+
+    const badgeEstado = (e) => {
+      const x = ESTADOS[e] || ESTADOS.borrador;
+      return `<span class="badge ${x.cls}">${x.txt}</span>`;
+    };
+
+    // ============================================================
+    // PERMISOS
+    // ============================================================
+    const esOficina = () => estado.usuario && ['coordinador', 'gerencia'].includes(estado.usuario.rol);
+    const esGerencia = () => estado.usuario && estado.usuario.rol === 'gerencia';
+
+    // ============================================================
+    // SESIÓN
+    // ============================================================
+    const guardarSesion = (u) => sessionStorage.setItem('ravel_fds_user', JSON.stringify(u));
+    const cargarSesion = () => {
+      const s = sessionStorage.getItem('ravel_fds_user');
+      return s ? JSON.parse(s) : null;
+    };
+    const limpiarSesion = () => sessionStorage.removeItem('ravel_fds_user');
+
+    // ============================================================
+    // LOGIN
+    // ============================================================
+    const login = async () => {
+      const cedula = $('input-cedula').value.trim();
+      const errBox = $('login-error');
+      errBox.classList.add('hidden');
+
+      if (!cedula) {
+        errBox.textContent = 'Ingresa tu cédula';
+        errBox.classList.remove('hidden');
+        return;
+      }
+
+      try {
+        const snap = await getDoc(doc(db, 'usuarios_fds', cedula));
+        if (!snap.exists()) {
+          errBox.textContent = 'Cédula no registrada. Contacta al administrador.';
+          errBox.classList.remove('hidden');
+          return;
+        }
+        const u = snap.data();
+        if (u.activo === false) {
+          errBox.textContent = 'Tu usuario está inactivo. Contacta al administrador.';
+          errBox.classList.remove('hidden');
+          return;
+        }
+        estado.usuario = { cedula, ...u };
+        guardarSesion(estado.usuario);
+        entrarApp();
+      } catch (e) {
+        errBox.textContent = 'Error al ingresar: ' + e.message;
+        errBox.classList.remove('hidden');
+      }
+    };
+
+    const logout = () => {
+      if (estado.unsubServicios) estado.unsubServicios();
+      if (estado.unsubVehiculos) estado.unsubVehiculos();
+      if (estado.unsubUsuarios) estado.unsubUsuarios();
+      limpiarSesion();
+      estado.usuario = null;
+      estado.vista = 'lista';
+      $('view-main').classList.add('hidden');
+      $('view-login').classList.remove('hidden');
+      $('input-cedula').value = '';
+    };
+
+    // ============================================================
+    // ENTRAR A LA APP
+    // ============================================================
+    const entrarApp = () => {
+      $('view-login').classList.add('hidden');
+      $('view-main').classList.remove('hidden');
+      $('header-nombre').textContent = estado.usuario.nombre;
+      $('header-rol').textContent = estado.usuario.rol;
+
+      // Vista inicial según rol
+      estado.vista = estado.usuario.rol === 'conductor' ? 'lista' : 'lista';
+
+      renderNav();
+      suscribirVehiculos();
+      suscribirServicios();
+      if (esGerencia()) suscribirUsuarios();
+      navegarA(estado.vista);
+    };
+
+    // ============================================================
+    // NAVEGACIÓN
+    // ============================================================
+    const renderNav = () => {
+      const tabs = [];
+      tabs.push({ id: 'lista', txt: estado.usuario.rol === 'conductor' ? 'Mis servicios' : 'Servicios' });
+      tabs.push({ id: 'form', txt: '+ Nuevo' });
+      if (esOficina()) {
+        tabs.push({ id: 'aprobaciones', txt: 'Aprobaciones' });
+        tabs.push({ id: 'dashboard', txt: 'Dashboard' });
+        tabs.push({ id: 'vehiculos', txt: 'Vehículos' });
+      }
+      if (esGerencia()) {
+        tabs.push({ id: 'usuarios', txt: 'Usuarios' });
+      }
+      $('nav-tabs').innerHTML = tabs.map(t =>
+        `<button class="nav-link ${estado.vista === t.id ? 'active' : ''}" data-tab="${t.id}">${t.txt}</button>`
+      ).join('');
+      $('nav-tabs').querySelectorAll('[data-tab]').forEach(b => {
+        b.onclick = () => navegarA(b.dataset.tab);
+      });
+    };
+
+    const navegarA = (vista) => {
+      estado.vista = vista;
+      if (vista !== 'form') estado.servicioEditando = null;
+      renderNav();
+      render();
+    };
+
+    // ============================================================
+    // SUSCRIPCIONES FIRESTORE
+    // ============================================================
+    const suscribirVehiculos = () => {
+      const q = query(collection(db, 'vehiculos_fds'), orderBy('placa'));
+      estado.unsubVehiculos = onSnapshot(q, (snap) => {
+        estado.vehiculos = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (estado.vista === 'vehiculos' || estado.vista === 'form') render();
+      });
+    };
+
+    const suscribirServicios = () => {
+      let q;
+      if (estado.usuario.rol === 'conductor') {
+        q = query(
+          collection(db, 'servicios_fds'),
+          where('cedulaConductor', '==', estado.usuario.cedula),
+          orderBy('fecha', 'desc')
+        );
+      } else {
+        q = query(collection(db, 'servicios_fds'), orderBy('fecha', 'desc'));
+      }
+      estado.unsubServicios = onSnapshot(q, (snap) => {
+        estado.servicios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+      });
+    };
+
+    const suscribirUsuarios = () => {
+      const q = query(collection(db, 'usuarios_fds'), orderBy('nombre'));
+      estado.unsubUsuarios = onSnapshot(q, (snap) => {
+        estado.usuarios = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        if (estado.vista === 'usuarios') render();
+      });
+    };
+
+    // ============================================================
+    // RENDER PRINCIPAL
+    // ============================================================
+    const render = () => {
+      const c = $('content');
+      switch (estado.vista) {
+        case 'lista': c.innerHTML = renderLista(); afterRenderLista(); break;
+        case 'form': c.innerHTML = renderForm(); afterRenderForm(); break;
+        case 'aprobaciones': c.innerHTML = renderAprobaciones(); afterRenderAprobaciones(); break;
+        case 'dashboard': c.innerHTML = renderDashboard(); afterRenderDashboard(); break;
+        case 'vehiculos': c.innerHTML = renderVehiculos(); afterRenderVehiculos(); break;
+        case 'usuarios': c.innerHTML = renderUsuarios(); afterRenderUsuarios(); break;
+      }
+    };
+
+    // ============================================================
+    // VISTA: LISTA DE SERVICIOS
+    // ============================================================
+    const renderLista = () => {
+      const titulo = estado.usuario.rol === 'conductor' ? 'Mis servicios' : 'Todos los servicios';
+      let html = `
+        <div class="flex items-center justify-between mb-3">
+          <h1 class="text-lg font-semibold">${titulo}</h1>
+          <button class="btn btn-primary text-sm" data-action="nuevo">+ Nuevo</button>
+        </div>
+      `;
+      if (estado.servicios.length === 0) {
+        html += `<div class="card text-center text-gray-500 py-8">Aún no hay servicios registrados.</div>`;
+      } else {
+        html += '<div class="space-y-2">';
+        estado.servicios.forEach(s => {
+          html += `
+            <div class="card cursor-pointer hover:bg-gray-50" data-servicio="${s.id}">
+              <div class="flex items-center justify-between mb-1">
+                <div class="font-medium">${esc(s.placa)} · ${esc(s.nombreConductor)}</div>
+                ${badgeEstado(s.estado)}
+              </div>
+              <div class="text-sm text-gray-600">${esc(s.diaSemana || '')} ${esc(s.fecha || '')}</div>
+              <div class="text-sm text-gray-600">📍 ${esc(s.ubicacion || '—')} — ${esc(s.lugarAtendido || '—')}</div>
+              <div class="text-xs text-gray-500 mt-1">
+                ${esc(s.horaInicio || '--:--')} → ${esc(s.horaSalida || '--:--')} · Total: ${fmtMin(s.tTotalMin)}
+              </div>
+            </div>
+          `;
+        });
+        html += '</div>';
+      }
+      return html;
+    };
+
+    const afterRenderLista = () => {
+      document.querySelector('[data-action="nuevo"]').onclick = () => navegarA('form');
+      document.querySelectorAll('[data-servicio]').forEach(el => {
+        el.onclick = () => {
+          estado.servicioEditando = estado.servicios.find(s => s.id === el.dataset.servicio);
+          navegarA('form');
+        };
+      });
+    };
+
+    // ============================================================
+    // VISTA: FORMULARIO DE SERVICIO
+    // ============================================================
+    const renderForm = () => {
+      const s = estado.servicioEditando || {
+        fecha: fechaHoy(),
+        placa: '',
+        horaInicio: '',
+        horaLlegada: '',
+        horaSalida: '',
+        ubicacion: '',
+        lugarAtendido: '',
+        observaciones: '',
+        estado: 'borrador',
+        gps: null
+      };
+
+      const vehOpts = estado.vehiculos
+        .filter(v => v.activo !== false)
+        .map(v => `<option value="${esc(v.placa)}" ${s.placa === v.placa ? 'selected' : ''}>${esc(v.placa)} — ${esc(v.tipo || '')} ${v.origen ? `(${esc(v.origen)})` : ''}</option>`)
+        .join('');
+
+      return `
+        <div class="max-w-md mx-auto">
+          <div class="card">
+            <div class="flex items-center justify-between mb-3">
+              <div>
+                <div class="text-xs text-gray-500 uppercase tracking-wide">Servicio</div>
+                <div class="font-semibold">${diaSemana(s.fecha)} · ${esc(s.fecha)}</div>
+              </div>
+              ${badgeEstado(s.estado)}
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label class="label">Fecha</label>
+                <input id="f-fecha" type="date" class="input" value="${esc(s.fecha)}" />
+              </div>
+
+              <div>
+                <label class="label">Conductor</label>
+                <div class="px-3 py-2 bg-gray-50 rounded-lg text-sm">${esc(estado.usuario.nombre)}</div>
+              </div>
+
+              <div>
+                <label class="label">Placa</label>
+                <select id="f-placa" class="input">
+                  <option value="">— Seleccionar —</option>
+                  ${vehOpts}
+                </select>
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <div>
+                  <label class="label">H. Inicio</label>
+                  <input id="f-hi" type="time" class="input" value="${esc(s.horaInicio || '')}" />
+                </div>
+                <div>
+                  <label class="label">H. Llegada</label>
+                  <input id="f-hl" type="time" class="input" value="${esc(s.horaLlegada || '')}" />
+                </div>
+                <div>
+                  <label class="label">H. Salida</label>
+                  <input id="f-hs" type="time" class="input" value="${esc(s.horaSalida || '')}" />
+                </div>
+              </div>
+
+              <div>
+                <label class="label">Ubicación</label>
+                <div class="flex gap-2">
+                  <input id="f-ubi" type="text" class="input" placeholder="Ej: Bello, Antioquia" value="${esc(s.ubicacion || '')}" />
+                  <button class="btn btn-ghost text-xs whitespace-nowrap" data-action="gps">📍 GPS</button>
+                </div>
+                <div id="gps-info" class="text-xs text-gray-500 mt-1">${s.gps ? `GPS: ${s.gps.lat?.toFixed(5)}, ${s.gps.lng?.toFixed(5)}` : ''}</div>
+              </div>
+
+              <div>
+                <label class="label">Lugar atendido</label>
+                <input id="f-lug" type="text" class="input" placeholder="Ej: Subestación Niquía" value="${esc(s.lugarAtendido || '')}" />
+              </div>
+
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-xs text-gray-500 uppercase tracking-wide mb-2">Tiempos calculados</div>
+                <div id="tiempos-calc" class="space-y-1 text-sm"></div>
+              </div>
+
+              <div>
+                <label class="label">Observaciones (opcional)</label>
+                <textarea id="f-obs" class="input" style="min-height: 60px;">${esc(s.observaciones || '')}</textarea>
+              </div>
+
+              ${s.comentarioAprobacion ? `
+                <div class="bg-red-50 border border-red-200 rounded-lg p-3 text-sm">
+                  <div class="text-xs font-semibold text-red-700 uppercase mb-1">Comentario oficina</div>
+                  <div class="text-red-700">${esc(s.comentarioAprobacion)}</div>
+                </div>
+              ` : ''}
+
+              <div class="grid grid-cols-2 gap-2 pt-2">
+                <button class="btn btn-ghost" data-action="cancelar">Cancelar</button>
+                <button class="btn btn-primary" data-action="cerrar">Cerrar servicio</button>
+              </div>
+              <button class="btn btn-ghost w-full text-sm" data-action="borrador">Guardar como borrador</button>
+            </div>
+          </div>
+        </div>
+      `;
+    };
+
+    const calcularTiemposEnVivo = () => {
+      const hi = $('f-hi')?.value, hl = $('f-hl')?.value, hs = $('f-hs')?.value;
+      const d = diffMin(hi, hl), i = diffMin(hl, hs), t = diffMin(hi, hs);
+      const box = $('tiempos-calc');
+      if (!box) return;
+      box.innerHTML = `
+        <div class="flex justify-between"><span class="text-gray-600">Desplazamiento</span><span class="font-medium">${fmtMin(d)}</span></div>
+        <div class="flex justify-between"><span class="text-gray-600">Intervención</span><span class="font-medium">${fmtMin(i)}</span></div>
+        <div class="flex justify-between border-t pt-1"><span class="text-gray-600">Total servicio</span><span class="font-medium">${fmtMin(t)}</span></div>
+      `;
+    };
+
+    let _gpsCapturado = null;
+
+    const afterRenderForm = () => {
+      _gpsCapturado = estado.servicioEditando?.gps || null;
+      calcularTiemposEnVivo();
+      ['f-hi','f-hl','f-hs'].forEach(id => $(id).oninput = calcularTiemposEnVivo);
+
+      document.querySelector('[data-action="gps"]').onclick = () => {
+        if (!navigator.geolocation) return alert('GPS no disponible en este dispositivo');
+        navigator.geolocation.getCurrentPosition(
+          (p) => {
+            _gpsCapturado = { lat: p.coords.latitude, lng: p.coords.longitude, ts: Date.now() };
+            $('gps-info').textContent = `GPS: ${_gpsCapturado.lat.toFixed(5)}, ${_gpsCapturado.lng.toFixed(5)}`;
+          },
+          () => alert('No se pudo capturar la ubicación')
+        );
+      };
+
+      document.querySelector('[data-action="cancelar"]').onclick = () => navegarA('lista');
+      document.querySelector('[data-action="borrador"]').onclick = () => guardarServicio('borrador');
+      document.querySelector('[data-action="cerrar"]').onclick = () => guardarServicio('por_aprobar');
+    };
+
+    const guardarServicio = async (nuevoEstado) => {
+      const placa = $('f-placa').value;
+      const fecha = $('f-fecha').value;
+      const hi = $('f-hi').value, hl = $('f-hl').value, hs = $('f-hs').value;
+      const ubi = $('f-ubi').value.trim();
+      const lug = $('f-lug').value.trim();
+      const obs = $('f-obs').value.trim();
+
+      if (!placa) return alert('Selecciona la placa');
+      if (!fecha) return alert('Selecciona la fecha');
+      if (nuevoEstado !== 'borrador' && !hi) return alert('Falta hora de inicio');
+
+      const payload = {
+        fecha,
+        cedulaConductor: estado.usuario.cedula,
+        nombreConductor: estado.usuario.nombre,
+        placa,
+        horaInicio: hi,
+        horaLlegada: hl,
+        horaSalida: hs,
+        ubicacion: ubi,
+        lugarAtendido: lug,
+        observaciones: obs,
+        estado: nuevoEstado,
+        diaSemana: diaSemana(fecha),
+        tDesplMin: diffMin(hi, hl),
+        tIntervMin: diffMin(hl, hs),
+        tTotalMin: diffMin(hi, hs),
+        gps: _gpsCapturado,
+        updatedAt: serverTimestamp()
+      };
+
+      try {
+        if (estado.servicioEditando?.id) {
+          await updateDoc(doc(db, 'servicios_fds', estado.servicioEditando.id), payload);
+        } else {
+          payload.createdAt = serverTimestamp();
+          await addDoc(collection(db, 'servicios_fds'), payload);
+        }
+        estado.servicioEditando = null;
+        navegarA('lista');
+      } catch (e) {
+        alert('Error guardando: ' + e.message);
+      }
+    };
+
+    // ============================================================
+    // VISTA: APROBACIONES
+    // ============================================================
+    const renderAprobaciones = () => {
+      const filtrados = estado.servicios.filter(s => s.estado === estado.filtroEstado);
+      return `
+        <div class="flex items-center justify-between mb-3">
+          <h1 class="text-lg font-semibold">Aprobaciones</h1>
+          <select id="filtro-estado" class="input" style="width:auto;font-size:0.875rem;">
+            <option value="por_aprobar" ${estado.filtroEstado === 'por_aprobar' ? 'selected' : ''}>Por aprobar</option>
+            <option value="aprobado" ${estado.filtroEstado === 'aprobado' ? 'selected' : ''}>Aprobados</option>
+            <option value="rechazado" ${estado.filtroEstado === 'rechazado' ? 'selected' : ''}>Rechazados</option>
+            <option value="borrador" ${estado.filtroEstado === 'borrador' ? 'selected' : ''}>Borradores</option>
+          </select>
+        </div>
+        <div class="card flex justify-between items-center mb-3">
+          <span class="text-sm text-gray-600">Total (${ESTADOS[estado.filtroEstado].txt})</span>
+          <span class="text-lg font-semibold">${filtrados.length}</span>
+        </div>
+        ${filtrados.length === 0 ? '<div class="card text-center text-gray-500 py-8">Sin registros.</div>' : ''}
+        <div class="space-y-2">
+          ${filtrados.map(s => `
+            <div class="card">
+              <div class="flex items-center justify-between mb-1">
+                <div class="font-medium">${esc(s.placa)} · ${esc(s.nombreConductor)}</div>
+                <span class="text-xs text-gray-500">${esc(s.fecha)}</span>
+              </div>
+              <div class="text-sm text-gray-600">📍 ${esc(s.ubicacion || '—')} — ${esc(s.lugarAtendido || '—')}</div>
+              <div class="text-xs text-gray-500 mt-1">
+                ${esc(s.horaInicio || '--')} → ${esc(s.horaSalida || '--')} · Despl: ${fmtMin(s.tDesplMin)} · Interv: ${fmtMin(s.tIntervMin)}
+              </div>
+              ${s.observaciones ? `<div class="text-xs text-gray-600 mt-2 italic">"${esc(s.observaciones)}"</div>` : ''}
+              ${s.comentarioAprobacion ? `<div class="text-xs text-red-700 mt-2">Oficina: ${esc(s.comentarioAprobacion)}</div>` : ''}
+              ${estado.filtroEstado === 'por_aprobar' ? `
+                <div class="grid grid-cols-3 gap-2 mt-3">
+                  <button class="btn btn-ok text-sm" data-aprobar="${s.id}">Aprobar</button>
+                  <button class="btn btn-err text-sm" data-rechazar="${s.id}">Rechazar</button>
+                  <button class="btn btn-ghost text-sm" data-editar="${s.id}">Editar</button>
+                </div>
+              ` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+    };
+
+    const afterRenderAprobaciones = () => {
+      $('filtro-estado').onchange = (e) => { estado.filtroEstado = e.target.value; render(); };
+      document.querySelectorAll('[data-aprobar]').forEach(b => b.onclick = () => decidirServicio(b.dataset.aprobar, 'aprobado'));
+      document.querySelectorAll('[data-rechazar]').forEach(b => b.onclick = async () => {
+        const c = prompt('Motivo del rechazo:');
+        if (c == null) return;
+        decidirServicio(b.dataset.rechazar, 'rechazado', c);
+      });
+      document.querySelectorAll('[data-editar]').forEach(b => b.onclick = () => {
+        estado.servicioEditando = estado.servicios.find(s => s.id === b.dataset.editar);
+        navegarA('form');
+      });
+    };
+
+    const decidirServicio = async (id, nuevoEstado, comentario = '') => {
+      try {
+        await updateDoc(doc(db, 'servicios_fds', id), {
+          estado: nuevoEstado,
+          aprobadoPorCedula: estado.usuario.cedula,
+          aprobadoPorNombre: estado.usuario.nombre,
+          comentarioAprobacion: comentario,
+          fechaAprobacion: serverTimestamp()
+        });
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+
+    // ============================================================
+    // VISTA: DASHBOARD
+    // ============================================================
+    const renderDashboard = () => {
+      if (!estado.dashDesde) estado.dashDesde = fechaHaceDias(30);
+      if (!estado.dashHasta) estado.dashHasta = fechaHoy();
+
+      const filtrados = estado.servicios.filter(s =>
+        s.fecha >= estado.dashDesde && s.fecha <= estado.dashHasta
+      );
+
+      const total = filtrados.length;
+      const aprobados = filtrados.filter(s => s.estado === 'aprobado').length;
+      const porAprobar = filtrados.filter(s => s.estado === 'por_aprobar').length;
+      const rechazados = filtrados.filter(s => s.estado === 'rechazado').length;
+      const tTotal = filtrados.reduce((a, s) => a + (s.tTotalMin || 0), 0);
+      const pct = total ? Math.round((aprobados / total) * 100) : 0;
+
+      const porConductor = {};
+      const porVeh = {};
+      const porUbicacion = {};
+      filtrados.forEach(s => {
+        if (s.nombreConductor) porConductor[s.nombreConductor] = (porConductor[s.nombreConductor] || 0) + 1;
+        if (s.placa) porVeh[s.placa] = (porVeh[s.placa] || 0) + 1;
+        if (s.ubicacion) porUbicacion[s.ubicacion] = (porUbicacion[s.ubicacion] || 0) + 1;
+      });
+      const rkCond = Object.entries(porConductor).sort((a,b) => b[1]-a[1]).slice(0,5);
+      const rkVeh = Object.entries(porVeh).sort((a,b) => b[1]-a[1]).slice(0,5);
+      const rkUbi = Object.entries(porUbicacion).sort((a,b) => b[1]-a[1]).slice(0,5);
+
+      const kpi = (label, valor, extra='', cls='') => `
+        <div class="card">
+          <div class="text-xs text-gray-500 uppercase tracking-wide">${label}</div>
+          <div class="text-2xl font-semibold mt-1 ${cls}">${valor}${extra ? `<span class="text-sm text-gray-500 ml-2">${extra}</span>` : ''}</div>
+        </div>
+      `;
+
+      const ranking = (titulo, items) => `
+        <div class="card">
+          <div class="font-semibold mb-2">${titulo}</div>
+          ${items.length === 0 ? '<div class="text-sm text-gray-500">Sin datos</div>' : ''}
+          ${items.map(([k, v]) => `
+            <div class="flex justify-between py-1 text-sm border-b last:border-0">
+              <span>${esc(k)}</span><span class="font-medium">${v}</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      return `
+        <h1 class="text-lg font-semibold mb-3">Dashboard</h1>
+        <div class="card grid grid-cols-2 gap-3 mb-3">
+          <div>
+            <label class="label">Desde</label>
+            <input id="dash-desde" type="date" class="input" value="${estado.dashDesde}" />
+          </div>
+          <div>
+            <label class="label">Hasta</label>
+            <input id="dash-hasta" type="date" class="input" value="${estado.dashHasta}" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+          ${kpi('Total servicios', total)}
+          ${kpi('Aprobados', aprobados, `${pct}%`)}
+          ${kpi('Por aprobar', porAprobar, '', 'text-amber-700')}
+          ${kpi('Rechazados', rechazados, '', 'text-red-700')}
+          ${kpi('Horas operación', fmtMin(tTotal))}
+          ${kpi('Conductores', Object.keys(porConductor).length)}
+          ${kpi('Vehículos', Object.keys(porVeh).length)}
+          ${kpi('Ubicaciones', Object.keys(porUbicacion).length)}
+        </div>
+        <div class="grid md:grid-cols-3 gap-3">
+          ${ranking('Top conductores', rkCond)}
+          ${ranking('Top vehículos', rkVeh)}
+          ${ranking('Top ubicaciones', rkUbi)}
+        </div>
+      `;
+    };
+
+    const afterRenderDashboard = () => {
+      $('dash-desde').onchange = (e) => { estado.dashDesde = e.target.value; render(); };
+      $('dash-hasta').onchange = (e) => { estado.dashHasta = e.target.value; render(); };
+    };
+
+    // ============================================================
+    // VISTA: VEHÍCULOS
+    // ============================================================
+    let _vehEditando = null;
+
+    const renderVehiculos = () => {
+      const v = _vehEditando || { placa: '', tipo: 'Microbús', origen: 'Propio', propietario: '', activo: true };
+      const TIPOS = ['Bus', 'Microbús', 'Van', 'Camioneta', 'Auto', 'Otro'];
+      const ORIGENES = ['Propio', 'Tercero', 'Cliente', 'Otra línea'];
+
+      return `
+        <h1 class="text-lg font-semibold mb-3">Vehículos del servicio</h1>
+        <div class="card mb-3">
+          <div class="font-semibold mb-3">${_vehEditando ? 'Editar' : 'Agregar'} vehículo</div>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div>
+              <label class="label">Placa</label>
+              <input id="v-placa" class="input" value="${esc(v.placa)}" ${_vehEditando ? 'disabled' : ''} placeholder="EQX123" />
+            </div>
+            <div>
+              <label class="label">Tipo</label>
+              <select id="v-tipo" class="input">
+                ${TIPOS.map(t => `<option ${v.tipo === t ? 'selected' : ''}>${t}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="label">Origen</label>
+              <select id="v-origen" class="input">
+                ${ORIGENES.map(o => `<option ${v.origen === o ? 'selected' : ''}>${o}</option>`).join('')}
+              </select>
+            </div>
+            <div>
+              <label class="label">Propietario / Empresa</label>
+              <input id="v-prop" class="input" value="${esc(v.propietario || '')}" />
+            </div>
+            <div class="flex items-center gap-2 md:col-span-2">
+              <input id="v-activo" type="checkbox" ${v.activo !== false ? 'checked' : ''} />
+              <label for="v-activo" class="text-sm">Activo</label>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-primary" data-action="v-guardar">${_vehEditando ? 'Actualizar' : 'Agregar'}</button>
+            ${_vehEditando ? '<button class="btn btn-ghost" data-action="v-cancelar">Cancelar</button>' : ''}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="font-semibold mb-2">Listado (${estado.vehiculos.length})</div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left border-b">
+                  <th class="py-2">Placa</th>
+                  <th>Tipo</th>
+                  <th>Origen</th>
+                  <th>Propietario</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${estado.vehiculos.map(v => `
+                  <tr class="border-b last:border-0">
+                    <td class="py-2 font-medium">${esc(v.placa)}</td>
+                    <td>${esc(v.tipo || '')}</td>
+                    <td>${esc(v.origen || '')}</td>
+                    <td class="text-gray-600">${esc(v.propietario || '—')}</td>
+                    <td>
+                      <span class="badge ${v.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+                        ${v.activo !== false ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                      <button class="text-blue-700 text-xs mr-2" data-veh-edit="${esc(v.id)}">Editar</button>
+                      <button class="text-red-700 text-xs" data-veh-del="${esc(v.id)}">Eliminar</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    };
+
+    const afterRenderVehiculos = () => {
+      document.querySelector('[data-action="v-guardar"]').onclick = guardarVehiculo;
+      const cancelBtn = document.querySelector('[data-action="v-cancelar"]');
+      if (cancelBtn) cancelBtn.onclick = () => { _vehEditando = null; render(); };
+      document.querySelectorAll('[data-veh-edit]').forEach(b => b.onclick = () => {
+        _vehEditando = estado.vehiculos.find(x => x.id === b.dataset.vehEdit);
+        render();
+      });
+      document.querySelectorAll('[data-veh-del]').forEach(b => b.onclick = async () => {
+        if (!confirm('¿Eliminar este vehículo?')) return;
+        await deleteDoc(doc(db, 'vehiculos_fds', b.dataset.vehDel));
+      });
+    };
+
+    const guardarVehiculo = async () => {
+      const placa = $('v-placa').value.trim().toUpperCase().replace(/\s/g, '');
+      if (!placa) return alert('Placa requerida');
+      const payload = {
+        placa,
+        tipo: $('v-tipo').value,
+        origen: $('v-origen').value,
+        propietario: $('v-prop').value.trim(),
+        activo: $('v-activo').checked
+      };
+      try {
+        await setDoc(doc(db, 'vehiculos_fds', placa), payload);
+        _vehEditando = null;
+        render();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+
+    // ============================================================
+    // VISTA: USUARIOS
+    // ============================================================
+    let _userEditando = null;
+
+    const renderUsuarios = () => {
+      const u = _userEditando || { cedula: '', nombre: '', telefono: '', rol: 'conductor', activo: true };
+      const ROLES = ['conductor', 'coordinador', 'gerencia'];
+
+      return `
+        <h1 class="text-lg font-semibold mb-3">Usuarios</h1>
+        <div class="card mb-3">
+          <div class="font-semibold mb-3">${_userEditando ? 'Editar' : 'Agregar'} usuario</div>
+          <div class="grid md:grid-cols-2 gap-3">
+            <div>
+              <label class="label">Cédula</label>
+              <input id="u-cedula" class="input" value="${esc(u.cedula)}" ${_userEditando ? 'disabled' : ''} inputmode="numeric" />
+            </div>
+            <div>
+              <label class="label">Nombre completo</label>
+              <input id="u-nombre" class="input" value="${esc(u.nombre)}" />
+            </div>
+            <div>
+              <label class="label">Teléfono</label>
+              <input id="u-tel" class="input" value="${esc(u.telefono || '')}" inputmode="tel" />
+            </div>
+            <div>
+              <label class="label">Rol</label>
+              <select id="u-rol" class="input">
+                ${ROLES.map(r => `<option ${u.rol === r ? 'selected' : ''}>${r}</option>`).join('')}
+              </select>
+            </div>
+            <div class="flex items-center gap-2 md:col-span-2">
+              <input id="u-activo" type="checkbox" ${u.activo !== false ? 'checked' : ''} />
+              <label for="u-activo" class="text-sm">Activo</label>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-3">
+            <button class="btn btn-primary" data-action="u-guardar">${_userEditando ? 'Actualizar' : 'Agregar'}</button>
+            ${_userEditando ? '<button class="btn btn-ghost" data-action="u-cancelar">Cancelar</button>' : ''}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="font-semibold mb-2">Usuarios (${estado.usuarios.length})</div>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="text-left border-b">
+                  <th class="py-2">Cédula</th>
+                  <th>Nombre</th>
+                  <th>Teléfono</th>
+                  <th>Rol</th>
+                  <th>Estado</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                ${estado.usuarios.map(u => `
+                  <tr class="border-b last:border-0">
+                    <td class="py-2 font-medium">${esc(u.cedula || u.id)}</td>
+                    <td>${esc(u.nombre)}</td>
+                    <td class="text-gray-600">${esc(u.telefono || '—')}</td>
+                    <td><span class="badge bg-blue-100 text-blue-700 capitalize">${esc(u.rol)}</span></td>
+                    <td>
+                      <span class="badge ${u.activo !== false ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+                        ${u.activo !== false ? 'Activo' : 'Inactivo'}
+                      </span>
+                    </td>
+                    <td class="text-right whitespace-nowrap">
+                      <button class="text-blue-700 text-xs" data-user-edit="${esc(u.id)}">Editar</button>
+                    </td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    };
+
+    const afterRenderUsuarios = () => {
+      document.querySelector('[data-action="u-guardar"]').onclick = guardarUsuario;
+      const cancelBtn = document.querySelector('[data-action="u-cancelar"]');
+      if (cancelBtn) cancelBtn.onclick = () => { _userEditando = null; render(); };
+      document.querySelectorAll('[data-user-edit]').forEach(b => b.onclick = () => {
+        _userEditando = estado.usuarios.find(x => x.id === b.dataset.userEdit);
+        render();
+      });
+    };
+
+    const guardarUsuario = async () => {
+      const cedula = $('u-cedula').value.trim();
+      const nombre = $('u-nombre').value.trim();
+      if (!cedula || !nombre) return alert('Cédula y nombre son obligatorios');
+      const payload = {
+        cedula,
+        nombre,
+        telefono: $('u-tel').value.trim(),
+        rol: $('u-rol').value,
+        activo: $('u-activo').checked
+      };
+      try {
+        await setDoc(doc(db, 'usuarios_fds', cedula), payload);
+        _userEditando = null;
+        render();
+      } catch (e) {
+        alert('Error: ' + e.message);
+      }
+    };
+
+    // ============================================================
+    // INICIALIZACIÓN
+    // ============================================================
+    $('btn-login').onclick = login;
+    $('input-cedula').onkeydown = (e) => { if (e.key === 'Enter') login(); };
+    $('btn-logout').onclick = logout;
+
+    // Restaurar sesión si existe
+    const sesion = cargarSesion();
+    if (sesion) {
+      estado.usuario = sesion;
+      entrarApp();
+    }
+  </script>
+</body>
+</html>
